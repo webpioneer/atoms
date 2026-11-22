@@ -26,6 +26,10 @@ const I = {
   phone: '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>',
   archive: '<svg viewBox="0 0 24 24"><path d="M3 4h18v4H3zM5 8v12h14V8M10 12h4"/></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  sparkle: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5L8 5.5z"/></svg>',
+  send: '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+  stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>',
 };
 
 /* ---------- Misc helpers ---------- */
@@ -42,6 +46,7 @@ const defaultState = () => ({
   scorecard: [],
   journal: {},    // { 'YYYY-MM-DD': 'text' }
   settings: {},
+  coach: [],      // [{ role: 'user'|'assistant', content }]
 });
 
 function load() {
@@ -90,6 +95,17 @@ const fmtTime = tm => {
   const [h, m] = tm.split(':').map(Number);
   const d = new Date(); d.setHours(h, m, 0, 0);
   return d.toLocaleTimeString(locale(), { hour: 'numeric', minute: '2-digit' });
+};
+
+const fmtDur = m => {
+  if (!m) return '';
+  const h = Math.floor(m / 60), r = m % 60;
+  return h ? `${h} h${r ? ` ${pad(r)}` : ''}` : `${m} ${t('minUnit')}`;
+};
+const endTime = (tm, m) => {
+  const [h, mi] = tm.split(':').map(Number);
+  const x = (h * 60 + mi + m) % 1440;
+  return `${pad(Math.floor(x / 60))}:${pad(x % 60)}`;
 };
 
 /* ---------- Habit logic ---------- */
@@ -168,7 +184,8 @@ function scheduleLabel(days) {
 function cueLine(h) {
   const bits = [];
   if (h.stack) bits.push(t('afterX', h.stack));
-  if (h.time) bits.push(fmtTime(h.time));
+  if (h.time) bits.push(h.duration ? `${fmtTime(h.time)}–${fmtTime(endTime(h.time, h.duration))}` : fmtTime(h.time));
+  else if (h.duration) bits.push(fmtDur(h.duration));
   if (h.location) bits.push(h.location);
   return bits.join(' · ');
 }
@@ -187,6 +204,7 @@ const routes = {
   more: viewMore,
   scorecard: viewScorecard,
   laws: viewLaws,
+  coach: viewCoach,
 };
 
 function render() {
@@ -293,6 +311,7 @@ function habitRow(h, d, canWarn) {
   else if (h.twoMin) chips.push(`<span class="chip">${esc(t('twoMinChip', h.twoMin))}</span>`);
   if (canWarn && !done && missedPrevious(h, d)) chips.push(`<span class="chip warn">${esc(t('neverMissTwice'))}</span>`);
   const meta = isBreak ? (h.identity ? t('iAmX', h.identity) : t('markResisted')) : cueLine(h);
+  const canTime = !isBreak && h.duration && !done && dkey(d) === dkey(today());
   return `
     <li class="habit ${done ? 'is-done' : ''}" style="--c:${esc(h.color)}" data-hid="${h.id}">
       <button class="check" data-action="toggle" data-id="${h.id}" data-date="${dkey(d)}"
@@ -302,6 +321,7 @@ function habitRow(h, d, canWarn) {
         ${meta ? `<span class="habit-meta">${esc(meta)}</span>` : ''}
         ${chips.length ? `<span class="chips">${chips.join('')}</span>` : ''}
       </a>
+      ${canTime ? `<button class="play" data-action="timer-open" data-id="${h.id}" aria-label="${esc(t('startTimer', h.name))}">${I.play}</button>` : ''}
       <span class="streak ${s >= 3 ? 'hot' : ''}" title="${esc(t('streakTitle'))}">${I.flame}${s}</span>
     </li>`;
 }
@@ -355,6 +375,14 @@ function viewHabitForm(id) {
           <input type="radio" id="t-break" name="type" value="break" ${v.type === 'break' ? 'checked' : ''}><label for="t-break">${esc(t('breakHabit'))}</label>
         </div>
       </fieldset>
+${h ? '' : `
+      <fieldset class="law ai-box">
+        <legend><span class="law-title">${I.sparkle} ${esc(t('aiFillTitle'))}</span></legend>
+        <p class="hint">${esc(t('aiFillHint'))}</p>
+        <textarea id="ai-idea" class="short" rows="2" placeholder="${esc(t('aiIdeaPh'))}"></textarea>
+        <button class="btn" type="button" style="margin-top:10px" data-action="ai-fill">${I.sparkle} ${esc(t('aiFill'))}</button>
+        <div data-ai-panel="form" style="margin-top:10px">${aiPanel('form')}</div>
+      </fieldset>`}
 
       <fieldset class="law">
         <legend><span class="law-title">${esc(t('whoBecome'))}</span></legend>
@@ -369,8 +397,9 @@ function viewHabitForm(id) {
       ${law(1, 'law1b', `
         <div class="two">
           <label class="field"><span>${esc(t('time'))}</span><input type="time" name="time" value="${esc(v.time)}" /></label>
-          ${f('location', 'location', 'locationPh')}
+          <label class="field"><span>${esc(t('duration'))}</span><span class="suffix"><input type="number" name="duration" min="1" max="720" step="1" inputmode="numeric" value="${esc(v.duration || '')}" placeholder="20" /><em>${esc(t('minUnit'))}</em></span></label>
         </div>
+        ${f('location', 'location', 'locationPh')}
         ${f('stack', 'stackLabel', 'stackPh', 'stackHint')}
       `, 'only-build')}
       ${law(1, 'law1k', f('l1', 'hideCue', 'hideCuePh'), 'only-break')}
@@ -419,13 +448,13 @@ function viewHabitDetail(id) {
       <p>${t('cIAm', B(h.identity || t('someoneInControl')))}</p>
       <p>${t('cStop', B(h.name))}</p>` : `
       ${h.identity ? `<p>${t('cIAm', B(h.identity))}</p>` : ''}
-      <p>${t('cWill', B(h.name), h.time && B(fmtTime(h.time)), h.location && B(h.location))}</p>
+      <p>${t('cWill', B(h.name), h.time && B(fmtTime(h.time)), h.location && B(h.location), h.duration && B(fmtDur(h.duration)))}</p>
       ${h.stack ? `<p>${t('cStack', B(h.stack), B(h.twoMin || h.name))}</p>` : ''}`;
 
   const names = t(isBreak ? 'lawsBreak' : 'lawsBuild');
   const vals = isBreak
     ? [h.l1, h.l2b, h.l3b, h.l4b]
-    : [[h.stack && t('afterX', h.stack), h.time && fmtTime(h.time), h.location].filter(Boolean).join(' · '),
+    : [[h.stack && t('afterX', h.stack), h.time && fmtTime(h.time), h.duration && fmtDur(h.duration), h.location].filter(Boolean).join(' · '),
        h.l2, [h.twoMin && t('twoMinChip', h.twoMin), h.l3].filter(Boolean).join(' — '), h.l4];
 
   return `
@@ -667,6 +696,13 @@ function viewMore() {
 
     ${installCard()}
 
+    <h2>${esc(t('coach'))}</h2>
+    <div class="card">
+      <p class="small muted" style="margin-top:0">${esc(t('aiPrivacy'))}</p>
+      <div data-ai-panel="more">${aiPanel('more')}</div>
+      ${state.settings.aiModel ? `<button class="btn sm danger" style="margin-top:10px" data-action="ai-remove">${I.trash} ${esc(t('aiRemove'))}</button>` : ''}
+    </div>
+
     <h2>${esc(t('tools'))}</h2>
     <div class="card">
       <ul class="menu">
@@ -817,9 +853,10 @@ const actions = {
   },
   reset() {
     if (!confirm(t('eraseConfirm'))) return;
-    const keepLang = state.settings.lang;
+    const { lang: keepLang, aiModel } = state.settings;
     state = defaultState();
     if (keepLang) state.settings.lang = keepLang;
+    if (aiModel) state.settings.aiModel = aiModel;
     save(); toast(t('erasedT')); location.hash = '#/today'; render();
   },
   async install() {
@@ -870,7 +907,8 @@ const forms = {
     Object.assign(h, {
       type: get('type') || 'build', name: get('name'),
       identity: get('identity').replace(/^(i am|je suis)\s+/i, ''),
-      time: get('time'), location: get('location'),
+      time: get('time'), duration: Math.min(720, Math.max(0, parseInt(get('duration'), 10) || 0)) || null,
+      location: get('location'),
       stack: get('stack').replace(/^(after i|après)\s+/i, ''),
       twoMin: get('twoMin'), l1: get('l1'), l2: get('l2'), l2b: get('l2b'), l3: get('l3'), l3b: get('l3b'),
       l4: get('l4'), l4b: get('l4b'), days, color: get('color') || COLORS[0],
@@ -923,6 +961,352 @@ function importFile(file) {
   r.readAsText(file);
 }
 
+/* =========================================================
+   On-device AI coach — WebLLM on WebGPU. Model weights are
+   downloaded once and cached by the browser; prompts and
+   answers never leave the phone.
+   ========================================================= */
+// Qwen2.5 1.5B Instruct (Apache-2.0): the smallest model that gave sensible, on-topic
+// habit advice and form suggestions in English and French during testing.
+const AI_MODELS = {
+  standard: { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', mb: 880, name: 'Qwen2.5 1.5B' },
+};
+const ai = { status: 'idle', progress: 0, engine: null, worker: null, model: null, error: '', busy: false, loading: null, lib: null };
+const aiKey = () => 'standard';
+if (state.settings.aiModel && !AI_MODELS[state.settings.aiModel]) delete state.settings.aiModel;
+const aiLib = async () => (ai.lib ||= await import('./vendor/web-llm.js'));
+
+async function webgpuOk() {
+  if (!navigator.gpu) return false;
+  try { return !!(await navigator.gpu.requestAdapter()); } catch (_) { return false; }
+}
+
+function aiEnsure() {
+  const key = aiKey();
+  if (ai.status === 'ready' && ai.model === key) return Promise.resolve(true);
+  if (ai.status === 'loading') return ai.loading;
+  ai.loading = (async () => {
+    if (!(await webgpuOk())) { ai.status = 'unsupported'; aiRefresh(); return false; }
+    ai.status = 'loading'; ai.progress = 0; ai.error = ''; aiRefresh();
+    try {
+      const lib = await aiLib();
+      ai.worker?.terminate(); ai.engine = null;
+      ai.worker = new Worker('llm-worker.js', { type: 'module' });
+      ai.engine = await lib.CreateWebWorkerMLCEngine(ai.worker, AI_MODELS[key].id, {
+        initProgressCallback: r => { ai.progress = r.progress || 0; aiProgress(); },
+      });
+      ai.model = key; ai.status = 'ready';
+      state.settings.aiModel = key; save();
+      aiRefresh();
+      return true;
+    } catch (e) {
+      ai.worker?.terminate(); ai.worker = null; ai.engine = null;
+      ai.status = 'error'; ai.error = String(e?.message || e).slice(0, 160);
+      aiRefresh();
+      return false;
+    }
+  })();
+  return ai.loading;
+}
+
+/** Re-open a model downloaded in an earlier session, without ever starting a fresh download. */
+async function aiAutoStart() {
+  if (ai.status !== 'idle' || !state.settings.aiModel) return;
+  try {
+    const lib = await aiLib();
+    if (await lib.hasModelInCache(AI_MODELS[state.settings.aiModel].id)) aiEnsure();
+    else { delete state.settings.aiModel; save(); aiRefresh(); }
+  } catch (_) { /* leave idle */ }
+}
+
+function aiPanel(where) {
+  const s = ai.status;
+  if (s === 'loading') {
+    const p = Math.round(ai.progress * 100);
+    return `<div class="meter"><i style="width:${p}%"></i></div><p class="small muted" data-ai-pct>${esc(t('aiLoading'))} ${p}%</p>`;
+  }
+  if (s === 'unsupported') return `<p class="small ai-warn">${esc(t('aiUnsupported'))}</p>`;
+  if (s === 'error') return `<p class="small ai-warn">${esc(t('aiError', ai.error))}</p><button class="btn sm" data-action="ai-start">${esc(t('retry'))}</button>`;
+  if (s === 'ready') return where === 'more' ? `<p class="small" style="margin:0">✓ ${esc(t('aiModelLbl', AI_MODELS[ai.model].name))}</p>` : '';
+  if (state.settings.aiModel) {
+    return where === 'form' ? '' : `<button class="btn primary block" data-action="ai-start">${I.sparkle} ${esc(t('aiStart'))}</button>`;
+  }
+  return `
+    <button class="btn primary block" data-action="ai-start">${I.sparkle} ${esc(t('aiDownload', AI_MODELS[aiKey()].mb))}</button>
+    <p class="small muted" style="margin:8px 0 0">${esc(t('aiWifi'))}</p>`;
+}
+function aiRefresh() {
+  document.querySelectorAll('[data-ai-panel]').forEach(el => { el.innerHTML = aiPanel(el.dataset.aiPanel); });
+}
+function aiProgress() {
+  const p = Math.round(ai.progress * 100);
+  document.querySelectorAll('[data-ai-panel] .meter i').forEach(i => { i.style.width = p + '%'; });
+  document.querySelectorAll('[data-ai-pct]').forEach(el => { el.textContent = `${t('aiLoading')} ${p}%`; });
+}
+
+function coachContext() {
+  const hl = activeHabits().map(h => `- ${h.name}${h.identity ? ` (${t('iAmX', h.identity)})` : ''}${h.type === 'break' ? ` · ${t('breakingChip')}` : ''} · ${scheduleLabel(h.days)}${h.time ? ` · ${h.time}` : ''}${h.duration ? ` · ${fmtDur(h.duration)}` : ''} · ${t('days30')}: ${pct(rate(h, 30))} · ${t('streak')}: ${currentStreak(h)}`).join('\n');
+  const gl = state.goals.map(g => `- ${g.title}${g.why ? ` — ${g.why}` : ''}`).join('\n');
+  return t('aiSystem', hl || t('aiNone'), gl || t('aiNone'));
+}
+
+function fmtMsg(text) {
+  return esc(text.trim()).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^#{1,4}\s*/gm, '');
+}
+const typing = '<span class="typing" aria-label="…"><i></i><i></i><i></i></span>';
+const bubble = m => `<div class="msg ${m.role}">${m.content ? fmtMsg(m.content) : typing}</div>`;
+
+function viewCoach() {
+  const msgs = state.coach || [];
+  setTimeout(aiAutoStart, 0);
+  return `
+    <header class="page-head">
+      <div><h1>${esc(t('coach'))}</h1><div class="sub">${esc(t('coachSub'))}</div></div>
+      ${msgs.length && !ai.busy ? `<button class="btn sm" data-action="coach-clear">${esc(t('clearChat'))}</button>` : ''}
+    </header>
+    <div class="card ai-intro">
+      <p class="small muted" style="margin:0">🔒 ${esc(t('aiPrivacy'))}</p>
+      <div data-ai-panel="coach">${aiPanel('coach')}</div>
+    </div>
+    <div class="chat" id="chat">${msgs.length ? msgs.map(bubble).join('') : `
+      <p class="muted small">${esc(t('coachEmpty'))}</p>
+      <div class="suggest">${t('coachSuggestions').map(q => `<button class="chip-btn" data-action="coach-suggest">${esc(q)}</button>`).join('')}</div>`}
+    </div>
+    <form class="composer" data-form="coach">
+      <textarea name="q" rows="1" placeholder="${esc(t('coachPh'))}" aria-label="${esc(t('coachPh'))}">${esc(ui.coachDraft || '')}</textarea>
+      ${ai.busy
+        ? `<button class="icon-btn primary" type="button" data-action="coach-stop" aria-label="${esc(t('stop'))}">${I.stop}</button>`
+        : `<button class="icon-btn primary" type="submit" aria-label="${esc(t('send'))}">${I.send}</button>`}
+    </form>`;
+}
+
+const onCoach = () => (location.hash || '').startsWith('#/coach');
+const scrollChat = () => { if (onCoach()) window.scrollTo(0, document.body.scrollHeight); };
+
+async function coachAsk(text) {
+  text = (text || '').trim();
+  if (!text || ai.busy) return;
+  if (!state.settings.aiModel && ai.status !== 'ready') { ui.coachDraft = text; toast(t('aiNeedDownload')); return; }
+  state.coach ||= [];
+  state.coach.push({ role: 'user', content: text });
+  const reply = { role: 'assistant', content: '' };
+  state.coach.push(reply);
+  ui.coachDraft = '';
+  ai.busy = true;
+  save(); rerender(); scrollChat();
+  try {
+    if (!(await aiEnsure())) { state.coach.splice(-2); ui.coachDraft = text; return; }
+    const history = state.coach.slice(-11, -1).map(({ role, content }) => ({ role, content }));
+    const stream = await ai.engine.chat.completions.create({
+      messages: [{ role: 'system', content: coachContext() }, ...history],
+      stream: true, temperature: 0.6, max_tokens: 350,
+    });
+    for await (const chunk of stream) {
+      reply.content += chunk.choices[0]?.delta?.content || '';
+      const el = document.querySelector('#chat .msg.assistant:last-child');
+      if (el) { el.innerHTML = reply.content ? fmtMsg(reply.content) : typing; scrollChat(); }
+    }
+  } catch (e) {
+    if (!reply.content) reply.content = t('aiBadOutput');
+  } finally {
+    ai.busy = false;
+    state.coach = state.coach.filter(m => m.content).slice(-40);
+    save();
+    if (onCoach()) { rerender(); scrollChat(); }
+  }
+}
+
+async function aiFill(btn) {
+  const form = btn.closest('form');
+  const type = form.dataset.type;
+  const ideaEl = $('#ai-idea');
+  const idea = ideaEl.value.trim() || form.querySelector('[name="name"]').value.trim();
+  if (!idea) { toast(t('aiNeedIdea')); ideaEl.focus(); return; }
+  if (!state.settings.aiModel && ai.status !== 'ready') { toast(t('aiNeedDownload')); return; }
+  if (ai.busy) return;
+  const label = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = `${I.sparkle} ${esc(t('aiFilling'))}`;
+  ai.busy = true;
+  try {
+    if (!(await aiEnsure())) return;
+    const fields = type === 'break'
+      ? { name: 'name', identity: 'identity', hideCue: 'l1', reframe: 'l2b', friction: 'l3b', accountability: 'l4b' }
+      : { name: 'name', identity: 'identity', time: 'time', duration: 'duration', location: 'location', stack: 'stack', twoMin: 'twoMin', pair: 'l2', prime: 'l3', reward: 'l4' };
+    const properties = {};
+    for (const k in fields) properties[k] = { type: k === 'duration' ? 'integer' : 'string' };
+    const schema = JSON.stringify({ type: 'object', properties, required: Object.keys(fields) });
+    const res = await ai.engine.chat.completions.create({
+      messages: [
+        { role: 'user', content: t('aiFillPrompt', type, t('aiFillExample')[type][0]) },
+        { role: 'assistant', content: t('aiFillExample')[type][1] },
+        { role: 'user', content: t('aiFillPrompt', type, idea) },
+      ],
+      response_format: { type: 'json_object', schema }, temperature: 0.4, max_tokens: 450,
+    });
+    let data;
+    try { data = JSON.parse(res.choices[0].message.content); } catch (_) { toast(t('aiBadOutput')); return; }
+    let n = 0;
+    for (const [k, field] of Object.entries(fields)) {
+      const input = form.querySelector(`[name="${field}"]`);
+      let val = data[k];
+      if (!input || input.value.trim() || val == null || val === '') continue;
+      if (k === 'time') {
+        const m = String(val).match(/^(\d{1,2})[:h](\d{2})/);
+        if (!m || +m[1] > 23 || +m[2] > 59) continue;
+        val = `${pad(+m[1])}:${m[2]}`;
+      }
+      if (k === 'duration') { val = Math.round(Number(val)); if (!(val > 0 && val <= 720)) continue; }
+      val = String(val).trim();
+      if (k === 'identity') val = val.replace(/^(i am|je suis)\s+/i, '');
+      if (k === 'stack') val = val.replace(/^(after i|après)\s+/i, '');
+      input.value = val;
+      input.classList.remove('ai-filled'); void input.offsetWidth; input.classList.add('ai-filled');
+      n++;
+    }
+    toast(t(n ? 'aiFilled' : 'aiBadOutput'));
+  } catch (_) {
+    toast(t('aiBadOutput'));
+  } finally {
+    ai.busy = false; btn.disabled = false; btn.innerHTML = label;
+  }
+}
+
+/* =========================================================
+   Habit timer — counts down the habit's duration (or two
+   minutes) and checks the habit off when time is up.
+   Uses timestamps, so it stays correct if the app is
+   backgrounded or reloaded.
+   ========================================================= */
+const TIMER_KEY = 'atoms-timer';
+let timer = (() => { try { return JSON.parse(localStorage.getItem(TIMER_KEY)); } catch (_) { return null; } })();
+let timerTick = null, wakeLock = null, audioCtx = null;
+
+function saveTimer() { if (timer) localStorage.setItem(TIMER_KEY, JSON.stringify(timer)); else localStorage.removeItem(TIMER_KEY); }
+function timerLeft() { return !timer ? 0 : timer.endsAt ? Math.max(0, (timer.endsAt - Date.now()) / 1000) : timer.left; }
+const mmss = sec => { sec = Math.ceil(sec); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`; };
+
+async function keepAwake() {
+  try { if (!wakeLock && navigator.wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch (_) { /* optional */ }
+}
+function beep() {
+  if (!audioCtx) return;
+  [0, 0.25].forEach(at => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+    const t0 = audioCtx.currentTime + at;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.3, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+    o.start(t0); o.stop(t0 + 0.2);
+  });
+}
+
+function openTimer(id) {
+  const h = habitById(id);
+  if (!h || !h.duration) return;
+  if (!timer || timer.id !== id) { timer = { id, total: h.duration * 60, left: h.duration * 60, endsAt: null, started: false }; saveTimer(); }
+  renderTimer();
+}
+function startTimer(sec) {
+  try { audioCtx ||= new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume?.(); } catch (_) { /* no sound */ }
+  timer = { ...timer, total: sec, left: sec, endsAt: Date.now() + sec * 1000, started: true };
+  saveTimer(); keepAwake(); renderTimer();
+}
+function pauseTimer() {
+  if (timer.endsAt) { timer.left = timerLeft(); timer.endsAt = null; }
+  else { timer.endsAt = Date.now() + timer.left * 1000; keepAwake(); }
+  saveTimer(); renderTimer();
+}
+function closeTimer() {
+  timer = null; saveTimer();
+  clearInterval(timerTick); timerTick = null;
+  wakeLock?.release?.(); wakeLock = null;
+  const root = $('#timer'); root.innerHTML = ''; root.hidden = true;
+}
+function finishTimer() {
+  const h = timer && habitById(timer.id);
+  closeTimer();
+  if (h && !isDone(h, today())) {
+    setDone(h, today(), true);
+    navigator.vibrate?.([200, 100, 200]); beep();
+    toast(t('timerDone'));
+  }
+  rerender();
+}
+
+function renderTimer() {
+  const h = timer && habitById(timer.id);
+  const root = $('#timer');
+  if (!h) { closeTimer(); return; }
+  const C = 2 * Math.PI * 100;
+  root.hidden = false;
+  root.innerHTML = `
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(h.name)}" style="--c:${esc(h.color)}">
+      <button class="del sheet-close" data-action="timer-close" aria-label="${esc(t(timer.started ? 'cancel' : 'close'))}">×</button>
+      <div class="eyebrow">${esc(h.identity ? t('iAmX', h.identity) : t('duration'))}</div>
+      <h2 style="margin:4px 0 0">${esc(h.name)}</h2>
+      <div class="timer-ring">
+        <svg viewBox="0 0 220 220"><circle class="track" cx="110" cy="110" r="100"/>
+          <circle class="bar" id="timer-bar" cx="110" cy="110" r="100" stroke-dasharray="${C}" stroke-dashoffset="0"/></svg>
+        <div class="timer-time" id="timer-time" role="timer">${mmss(timerLeft())}</div>
+      </div>
+      ${timer.started ? `
+        <div class="form-actions" style="margin-top:0">
+          <button class="btn" data-action="timer-pause">${esc(t(timer.endsAt ? 'pause' : 'resume'))}</button>
+          <button class="btn primary" data-action="timer-finish">${I.check} ${esc(t('finishNow'))}</button>
+        </div>` : `
+        <div class="stack-btns">
+          <button class="btn primary block" data-action="timer-start" data-sec="${h.duration * 60}">${I.play} ${esc(t('timerFull', fmtDur(h.duration)))}</button>
+          ${h.duration > 2 ? `<button class="btn block" data-action="timer-start" data-sec="120">${esc(t('timerTwo'))}${h.twoMin ? ` · ${esc(h.twoMin)}` : ''}</button>` : ''}
+        </div>
+        <p class="small muted" style="margin:12px 0 0">${esc(t('timerHint'))}</p>`}
+    </div>`;
+  const tick = () => {
+    if (!timer) return;
+    const left = timerLeft();
+    const el = $('#timer-time'), bar = $('#timer-bar');
+    if (el) el.textContent = mmss(left);
+    if (bar) bar.style.strokeDashoffset = String(C * (1 - left / timer.total));
+    if (timer.endsAt && left <= 0) finishTimer();
+  };
+  clearInterval(timerTick);
+  tick();
+  if (timer && timer.endsAt) timerTick = setInterval(tick, 250);
+}
+
+/* ---------- Coach, AI & timer actions ---------- */
+Object.assign(actions, {
+  'ai-start'() { aiEnsure(); },
+  'ai-fill'(el) { aiFill(el); },
+  async 'ai-remove'() {
+    if (!confirm(t('aiRemoveConfirm'))) return;
+    const key = state.settings.aiModel;
+    try { await ai.engine?.unload?.(); } catch (_) { /* ignore */ }
+    ai.worker?.terminate();
+    Object.assign(ai, { status: 'idle', engine: null, worker: null, model: null, progress: 0 });
+    try { if (key) await (await aiLib()).deleteModelAllInfoInCache(AI_MODELS[key].id); } catch (_) { /* ignore */ }
+    delete state.settings.aiModel; save();
+    toast(t('aiRemoved')); rerender();
+  },
+  'coach-suggest'(el) { coachAsk(el.textContent); },
+  'coach-stop'() { try { ai.engine?.interruptGenerate(); } catch (_) { /* ignore */ } },
+  'coach-clear'() { state.coach = []; save(); ai.engine?.resetChat?.().catch?.(() => {}); rerender(); },
+  'timer-open'(el) { openTimer(el.dataset.id); },
+  'timer-start'(el) { startTimer(Number(el.dataset.sec)); },
+  'timer-pause'() { pauseTimer(); },
+  'timer-finish'() { finishTimer(); },
+  'timer-close'() { closeTimer(); },
+});
+forms.coach = f => coachAsk(f.elements.q.value);
+
+document.addEventListener('input', e => {
+  if (e.target.name === 'q' && e.target.closest('.composer')) ui.coachDraft = e.target.value;
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target.closest?.('.composer')) {
+    e.preventDefault(); e.target.form.requestSubmit();
+  }
+  if (e.key === 'Escape' && timer && !$('#timer').hidden && !timer.started) closeTimer();
+});
+
 /* ---------- UI utilities ---------- */
 let toastT;
 function toast(msg) {
@@ -932,7 +1316,11 @@ function toast(msg) {
   clearTimeout(toastT);
   toastT = setTimeout(() => el.classList.remove('show'), 2200);
 }
-function fit(el) { el.style.height = 'auto'; el.style.height = Math.max(el.scrollHeight + 2, 90) + 'px'; }
+function fit(el) {
+  const min = el.closest('.composer') ? 40 : el.classList.contains('short') ? 60 : 90;
+  el.style.height = 'auto';
+  el.style.height = Math.min(Math.max(el.scrollHeight + 2, min), el.closest('.composer') ? 140 : 1000) + 'px';
+}
 function autosize() { document.querySelectorAll('textarea').forEach(fit); }
 
 /* ---------- Lifecycle ---------- */
@@ -941,7 +1329,11 @@ function checkDayChange() {
   const k = dkey(today());
   if (k !== lastDay) { if (dkey(ui.date) === lastDay) ui.date = today(); lastDay = k; rerender(); }
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDayChange(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  checkDayChange();
+  if (timer?.endsAt) { if (timerLeft() <= 0) finishTimer(); else keepAwake(); }
+});
 setInterval(checkDayChange, 60000);
 
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); ui.installPrompt = e; rerender(); });
@@ -955,3 +1347,4 @@ navigator.storage?.persist?.();
 
 applyLangChrome();
 render();
+if (timer) renderTimer();

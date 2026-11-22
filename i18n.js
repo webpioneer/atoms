@@ -70,7 +70,7 @@ const STRINGS = {
     someoneInControl: 'someone in control',
     cIAm: x => `I am ${x}.`,
     cStop: x => `I will stop ${x}.`,
-    cWill: (name, time, loc) => `I will ${name}${time ? ` at ${time}` : ''}${loc ? ` in ${loc}` : ''}.`,
+    cWill: (name, time, loc, dur) => `I will ${name}${time ? ` at ${time}` : ''}${dur ? ` for ${dur}` : ''}${loc ? ` in ${loc}` : ''}.`,
     cStack: (stack, act) => `After I ${stack}, I will ${act}.`,
     stats: 'Stats', streak: 'Streak', best: 'Best', days30: '30 days', votes: 'Votes',
     history: 'History', legendDone: 'Done', legendResisted: 'Resisted', missed: 'Missed', restDay: 'Rest day',
@@ -162,6 +162,64 @@ const STRINGS = {
     restoredBackup: 'Backup restored', invalidBackup: 'That file isn’t a valid backup',
     storageFull: 'Could not save — storage is full',
 
+    // Duration & timer
+    duration: 'Duration', minUnit: 'min',
+    startTimer: x => `Start timer: ${x}`, timerFull: x => `Start · ${x}`, timerTwo: 'Just 2 minutes',
+    pause: 'Pause', resume: 'Resume', finishNow: 'Done', cancel: 'Cancel', close: 'Close',
+    timerDone: 'Time’s up — habit checked off',
+    timerHint: 'Showing up is what counts. Start with two minutes if that’s all you’ve got.',
+
+    // Coach (on-device AI)
+    tabCoach: 'Coach', coach: 'Coach', coachSub: 'Your on-device habit coach',
+    aiPrivacy: 'Runs entirely on your phone. Nothing you write leaves this device.',
+    aiDownload: mb => `Download & start (~${mb} MB)`,
+    aiWifi: 'One-time download — use Wi-Fi; it takes a few minutes. It then stays on your phone and works offline. Works best on recent phones; answers take 15–30 seconds.',
+    aiStart: 'Start coach', aiLoading: 'Loading the coach…', aiModelLbl: x => `Model: ${x}`,
+    aiRemove: 'Remove downloaded model', aiRemoveConfirm: 'Delete the downloaded model from this phone? You can download it again later.', aiRemoved: 'Model removed',
+    aiUnsupported: 'This browser can’t run the AI on-device (it needs WebGPU). On iPhone, update to iOS 26 or later and use Safari. On Android, use an up-to-date Chrome.',
+    aiError: x => `The coach couldn’t start: ${x}. If your phone is low on memory, close other apps and try again.`, retry: 'Try again',
+    coachEmpty: 'Ask anything about building or breaking habits. The coach knows your current habits and goals.',
+    coachPh: 'Ask the coach…', send: 'Send', stop: 'Stop', clearChat: 'Clear chat',
+    coachSuggestions: ['Help me design a morning routine', 'Why do I keep missing my habits?', 'Turn my goal into small daily habits', 'How do I stop scrolling at night?'],
+    aiFillTitle: 'Design it with the coach',
+    aiFillHint: 'Describe what you want. The coach fills in the empty fields; you review and adjust.',
+    aiIdeaPh: 'e.g. I want to read more in the evening', aiFill: 'Fill with AI', aiFilling: 'Thinking…',
+    aiFilled: 'Suggestions added — review and adjust', aiNeedIdea: 'Describe the habit first', aiBadOutput: 'The coach got confused. Try rephrasing.',
+    aiNone: '(none yet)', aiNeedDownload: 'Download the coach first',
+    aiSystem: (habits, goals) => `You are Atoms Coach, a warm, concise habit coach inside a habit-tracking app. Ground your advice in the ideas of the book Atomic Habits: identity-based habits, the Four Laws (make it obvious, attractive, easy, satisfying — and invert them to break bad habits), habit stacking, implementation intentions ("I will [habit] at [time] in [place]"), the two-minute rule, environment design, never miss twice, and systems over goals. Give concrete, small, actionable suggestions. Keep answers short: at most 4 bullet points, under 120 words. Always reply in English. ${STRINGS.en.aiNoRefuse}
+
+The user's habits:
+${habits}
+
+The user's goals:
+${goals}`,
+    aiFillExample: {
+      build: ['I want to meditate', '{"name":"Meditate","identity":"a calm person","time":"07:00","duration":10,"location":"in my bedroom","stack":"make my bed","twoMin":"Take three deep breaths","pair":"My favorite tea while I sit","prime":"Leave the cushion on the floor","reward":"Check it off and enjoy the calm"}'],
+      break: ['I want to stop eating sugar at night', '{"name":"No sugar after dinner","identity":"someone who eats well","hideCue":"Keep no sweets in the house","reframe":"Sugar steals my sleep and energy","friction":"Brush my teeth right after dinner","accountability":"Tell my partner and log every slip"}'],
+    },
+    aiNoRefuse: 'Questions about habits, routines, health, focus, sleep or screen time are always appropriate: never refuse them.',
+    aiFillPrompt: (type, idea) => type === 'break'
+      ? `Help me BREAK a bad habit. My request: "${idea}".
+Reply in English with a JSON object. Keep every value short (under 12 words).
+- name: the habit to stop, 1-5 words (e.g. "No phone in bed")
+- identity: completes "I am ..." (e.g. "someone who sleeps well")
+- hideCue: how to make the cue invisible
+- reframe: a reframe that makes the habit unattractive
+- friction: how to make it difficult
+- accountability: an immediate cost or accountability partner`
+      : `Help me BUILD a good habit. My request: "${idea}".
+Reply in English with a JSON object. Keep every value short (under 12 words).
+- name: the habit, 1-4 words starting with a verb (e.g. "Read")
+- identity: completes "I am ..." (e.g. "a reader")
+- time: best start time, 24-hour "HH:MM"
+- duration: realistic full duration in minutes (integer)
+- location: where, with a preposition (e.g. "on the couch")
+- stack: an existing daily habit it comes right after (e.g. "brush my teeth")
+- twoMin: a version that takes only two minutes (e.g. "Read one page")
+- pair: something enjoyable to pair it with
+- prime: how to prepare the environment in advance
+- reward: a small immediate reward`,
+
     principles: [
       ['Systems over goals', 'Goals set the direction; systems make the progress. Fall in love with the process you repeat every day.'],
       ['Every action is a vote', 'Each time you show up, you cast a vote for the person you want to become. You don’t need a unanimous vote, just a majority.'],
@@ -246,7 +304,7 @@ const STRINGS = {
     someoneInControl: 'maître de moi',
     cIAm: x => `Je suis ${x}.`,
     cStop: x => `J’arrête : ${x}.`,
-    cWill: (name, time, loc) => `Je vais ${name}${time ? ` à ${time}` : ''}${loc ? ` ${loc}` : ''}.`,
+    cWill: (name, time, loc, dur) => `Je vais ${name}${time ? ` à ${time}` : ''}${dur ? ` pendant ${dur}` : ''}${loc ? ` ${loc}` : ''}.`,
     cStack: (stack, act) => `Après ${stack}, je vais ${act}.`,
     stats: 'Statistiques', streak: 'Série', best: 'Record', days30: '30 jours', votes: 'Votes',
     history: 'Historique', legendDone: 'Fait', legendResisted: 'Résisté', missed: 'Manqué', restDay: 'Repos',
@@ -331,6 +389,62 @@ const STRINGS = {
     importConfirm: n => `Remplacer les données actuelles par cette sauvegarde (${n} habitude${n > 1 ? 's' : ''}) ?`,
     restoredBackup: 'Sauvegarde restaurée', invalidBackup: 'Ce fichier n’est pas une sauvegarde valide',
     storageFull: 'Enregistrement impossible — stockage plein',
+
+    duration: 'Durée', minUnit: 'min',
+    startTimer: x => `Lancer le minuteur : ${x}`, timerFull: x => `Lancer · ${x}`, timerTwo: 'Juste 2 minutes',
+    pause: 'Pause', resume: 'Reprendre', finishNow: 'Terminé', cancel: 'Annuler', close: 'Fermer',
+    timerDone: 'Temps écoulé — habitude cochée',
+    timerHint: 'L’essentiel est d’être au rendez-vous. Commencez par deux minutes si c’est tout ce que vous avez.',
+
+    tabCoach: 'Coach', coach: 'Coach', coachSub: 'Votre coach d’habitudes, sur l’appareil',
+    aiPrivacy: 'Fonctionne entièrement sur votre téléphone. Rien de ce que vous écrivez ne quitte l’appareil.',
+    aiDownload: mb => `Télécharger et démarrer (~${mb} Mo)`,
+    aiWifi: 'Téléchargement unique — utilisez le Wi-Fi, cela prend quelques minutes. Le modèle reste ensuite sur votre téléphone et fonctionne hors ligne. Idéal sur un téléphone récent ; une réponse prend 15 à 30 secondes.',
+    aiStart: 'Démarrer le coach', aiLoading: 'Chargement du coach…', aiModelLbl: x => `Modèle : ${x}`,
+    aiRemove: 'Supprimer le modèle téléchargé', aiRemoveConfirm: 'Supprimer le modèle téléchargé de ce téléphone ? Vous pourrez le retélécharger plus tard.', aiRemoved: 'Modèle supprimé',
+    aiUnsupported: 'Ce navigateur ne peut pas faire tourner l’IA sur l’appareil (WebGPU est nécessaire). Sur iPhone, passez à iOS 26 ou plus récent et utilisez Safari. Sur Android, utilisez un Chrome à jour.',
+    aiError: x => `Le coach n’a pas pu démarrer : ${x}. Si votre téléphone manque de mémoire, fermez d’autres applis et réessayez.`, retry: 'Réessayer',
+    coachEmpty: 'Posez n’importe quelle question pour créer ou arrêter une habitude. Le coach connaît vos habitudes et objectifs actuels.',
+    coachPh: 'Demandez au coach…', send: 'Envoyer', stop: 'Arrêter', clearChat: 'Effacer la conversation',
+    coachSuggestions: ['Aidez-moi à créer une routine du matin', 'Pourquoi est-ce que je rate mes habitudes ?', 'Transformez mon objectif en petites habitudes', 'Comment arrêter de scroller le soir ?'],
+    aiFillTitle: 'Concevez-la avec le coach',
+    aiFillHint: 'Décrivez ce que vous voulez. Le coach remplit les champs vides ; vous relisez et ajustez.',
+    aiIdeaPh: 'ex. Je veux lire davantage le soir', aiFill: 'Remplir avec l’IA', aiFilling: 'Réflexion…',
+    aiFilled: 'Suggestions ajoutées — relisez et ajustez', aiNeedIdea: 'Décrivez d’abord l’habitude', aiBadOutput: 'Le coach s’est embrouillé. Reformulez.',
+    aiNone: '(aucun pour l’instant)', aiNeedDownload: 'Téléchargez d’abord le coach',
+    aiSystem: (habits, goals) => `Tu es le Coach Atoms, un coach en habitudes bienveillant et concis, intégré à une application de suivi d’habitudes. Appuie tes conseils sur les idées du livre Atomic Habits : habitudes fondées sur l’identité, les quatre lois (rendre évident, attrayant, facile, satisfaisant — et les inverser pour arrêter une mauvaise habitude), l’empilement d’habitudes, les intentions de mise en œuvre (« Je vais [habitude] à [heure] [lieu] »), la règle des deux minutes, la conception de l’environnement, ne jamais manquer deux fois, et les systèmes avant les objectifs. Donne des suggestions concrètes, petites et réalisables. Réponds brièvement : 4 puces au maximum, moins de 120 mots. Réponds toujours en français et vouvoie l’utilisateur. ${STRINGS.fr.aiNoRefuse}
+
+Habitudes de l’utilisateur :
+${habits}
+
+Objectifs de l’utilisateur :
+${goals}`,
+    aiFillExample: {
+      build: ['Je veux méditer', '{"name":"Méditer","identity":"une personne calme","time":"07:00","duration":10,"location":"dans ma chambre","stack":"mon réveil","twoMin":"Trois respirations profondes","pair":"Ma tisane préférée pendant","prime":"Laisser le coussin par terre","reward":"Cocher l’habitude et savourer le calme"}'],
+      break: ['Je veux arrêter le sucre le soir', '{"name":"Pas de sucre après le dîner","identity":"quelqu’un qui mange bien","hideCue":"Ne garder aucune sucrerie à la maison","reframe":"Le sucre me vole mon sommeil et mon énergie","friction":"Me brosser les dents juste après le dîner","accountability":"Le dire à mon conjoint et noter chaque écart"}'],
+    },
+    aiNoRefuse: 'Les questions sur les habitudes, routines, la santé, la concentration, le sommeil ou les écrans sont toujours appropriées : ne les refuse jamais.',
+    aiFillPrompt: (type, idea) => type === 'break'
+      ? `Aide-moi à ARRÊTER une mauvaise habitude. Ma demande : « ${idea} ».
+Réponds en français avec un objet JSON. Chaque valeur doit être courte (moins de 12 mots).
+- name : l’habitude à arrêter, 1 à 5 mots (ex. « Pas de téléphone au lit »)
+- identity : complète « Je suis … » (ex. « quelqu’un qui dort bien »)
+- hideCue : comment rendre le signal invisible
+- reframe : un nouveau regard qui rend l’habitude repoussante
+- friction : comment la rendre difficile
+- accountability : un coût immédiat ou un partenaire de responsabilité`
+      : `Aide-moi à CRÉER une bonne habitude. Ma demande : « ${idea} ».
+Réponds en français avec un objet JSON. Chaque valeur doit être courte (moins de 12 mots).
+- name : l’habitude, 1 à 4 mots commençant par un verbe (ex. « Lire »)
+- identity : complète « Je suis … » (ex. « un lecteur »)
+- time : meilleure heure de début, format 24 h « HH:MM »
+- duration : durée complète réaliste en minutes (entier)
+- location : où, avec une préposition (ex. « sur le canapé »)
+- stack : une habitude quotidienne existante juste avant (ex. « mon café du matin »)
+- twoMin : une version qui ne prend que deux minutes (ex. « Lire une page »)
+- pair : quelque chose d’agréable à y associer
+- prime : comment préparer l’environnement à l’avance
+- reward : une petite récompense immédiate`,
 
     principles: [
       ['Les systèmes avant les objectifs', 'Les objectifs donnent la direction ; les systèmes font avancer. Tombez amoureux du processus que vous répétez chaque jour.'],

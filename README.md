@@ -22,7 +22,7 @@ Upload the folder to any static host that serves HTTPS, such as Netlify Drop, Ve
 | Book idea | Where it lives |
 |---|---|
 | Identity-based habits | Each habit has an "I am …" identity. Every check-in counts as a *vote* for it (see Progress → Identity votes). |
-| 1st law: make it obvious | Implementation intention (time + location) and a habit stack ("After I …") |
+| 1st law: make it obvious | Implementation intention (start time, duration and location) and a habit stack ("After I …") |
 | 2nd law: make it attractive | Temptation-bundling field |
 | 3rd law: make it easy | Two-minute version and an environment-priming field |
 | 4th law: make it satisfying | Immediate reward field, the check animation, streaks, a heatmap you can't stop filling in |
@@ -31,6 +31,17 @@ Upload the folder to any static host that serves HTTPS, such as Netlify Drop, Ve
 | Habit Scorecard | More → Habit Scorecard: list your day and rate each item + / = / − |
 | Systems over goals | Goals have milestones and linked habits ("the system") with 30-day consistency |
 | 1% better | Progress → The power of 1% |
+
+| Two-minute rule, in practice | Habits with a duration get a ▶ timer on Today. Run the full session or "just 2 minutes"; it checks the habit off when time is up |
+
+## On-device AI coach
+
+The **Coach** tab and the **Fill with AI** button (new-habit form) use a small language model that runs entirely in the browser through WebGPU, with [WebLLM](https://github.com/mlc-ai/web-llm) (bundled in `vendor/`, Apache-2.0) and **Qwen2.5 1.5B Instruct** (Apache-2.0).
+
+- **Private:** prompts and answers never leave the device. Only the model files are downloaded, from Hugging Face and GitHub, on first use.
+- **One-time download, about 880 MB.** WebLLM caches it in the browser (Cache Storage), and the app's service worker leaves those caches alone when the app updates. It can be removed under More → Coach.
+- **Requirements:** a browser with WebGPU. On iPhone that means iOS 26 or later in Safari; on Android, a recent Chrome. It works best on recent phones. Answers take about 15–30 seconds.
+- **Limits:** it's a small model. Treat its suggestions as a starting point and edit them. A smaller 0.5B model was tested and dropped because its suggestions were off-topic.
 
 You can also write a daily reflection, go back to past days to fill in what you missed, archive habits, and export/import a JSON backup (More → Your data).
 

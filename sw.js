@@ -1,11 +1,13 @@
-/* Offline-first service worker: serve from cache, refresh in the background. */
-const CACHE = 'atoms-v2';
+/* Offline-first service worker: serve from cache, refresh in the background.
+   The AI library (vendor/) is cached on first use; model weights are cached by WebLLM itself. */
+const CACHE = 'atoms-v3';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './i18n.js',
   './app.js',
+  './llm-worker.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
@@ -21,7 +23,8 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      // Only remove this app's old shell caches — never WebLLM's model caches (webllm/*).
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('atoms-') && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
