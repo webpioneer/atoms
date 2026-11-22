@@ -34,6 +34,14 @@ Upload the folder to any static host that serves HTTPS, such as Netlify Drop, Ve
 
 | Two-minute rule, in practice | Habits with a duration get a ▶ timer on Today. Run the full session or "just 2 minutes"; it checks the habit off when time is up |
 
+## Prayer times
+
+Turn this on under **More → Prayer times**. The five daily prayers (Fajr, Dhuhr, Asr, Maghrib, Isha) then appear on Today as 15-minute blocks, in time order alongside your habits, and you can check them off. Progress shows the last 14 days.
+
+- Times are calculated on the device with [Adhan](https://github.com/batoulapps/adhan-js) (bundled in `vendor/`, MIT) from the phone's location. Your location is never sent anywhere.
+- Your location refreshes automatically when you open the app (if location access is allowed) or change time zone, so the times follow you when you travel. You can also enter coordinates manually.
+- The calculation method defaults to the one for your time zone (e.g. France → UOIF 12°, Morocco → 19°/17°, Saudi Arabia → Umm al-Qura; Muslim World League otherwise). You can change it, choose the Hanafi Asr, and shift any prayer by ±30 minutes to match your mosque.
+
 ## On-device AI coach
 
 The **Coach** tab and the **Fill with AI** button (new-habit form) use a small language model that runs entirely in the browser through WebGPU, with [WebLLM](https://github.com/mlc-ai/web-llm) (bundled in `vendor/`, Apache-2.0) and **Qwen2.5 1.5B Instruct** (Apache-2.0).

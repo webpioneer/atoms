@@ -409,3 +409,26 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: .75; }
 .composer .icon-btn { flex: none; }
 .composer .icon-btn svg { stroke-width: 2.4; }
 .composer [d^="M7 7"], .composer rect { fill: currentColor; }
+
+/* ---------- Prayer times ---------- */
+.prayer-sum { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 13.5px; font-weight: 600; color: #2b6c8f; text-decoration: none; }
+.prayer-sum svg, .habit.prayer .moon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.habit.prayer { background: color-mix(in srgb, #2b6c8f 6%, var(--card)); }
+.habit.prayer .moon { flex: none; color: #2b6c8f; display: grid; place-items: center; width: 24px; }
+.ar { font-family: "Geeza Pro", "Noto Naskh Arabic", "Segoe UI", sans-serif; font-weight: 500; color: var(--muted); font-size: .95em; margin-left: 4px; }
+.chip.now { background: #2b6c8f; border-color: #2b6c8f; color: #fff; font-weight: 600; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; cursor: pointer; }
+.switch { appearance: none; -webkit-appearance: none; flex: none; width: 50px; height: 30px; border-radius: 99px; background: var(--line); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(20px); }
+.check-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 14.5px; cursor: pointer; }
+.check-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+.more-opts { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.more-opts summary { cursor: pointer; font-weight: 600; font-size: 14.5px; color: var(--accent); }
+.times { list-style: none; padding: 0; margin: 0; }
+.times li { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15.5px; }
+.times li:first-child { border-top: 0; padding-top: 0; }
+.times b { font-variant-numeric: tabular-nums; }
+.adj { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0 10px; }
+.ico-inline svg { stroke: #2b6c8f; }

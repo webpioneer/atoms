@@ -30,6 +30,8 @@ const I = {
   play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5L8 5.5z"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>',
+  moon: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
 };
 
 /* ---------- Misc helpers ---------- */
@@ -47,6 +49,7 @@ const defaultState = () => ({
   journal: {},    // { 'YYYY-MM-DD': 'text' }
   settings: {},
   coach: [],      // [{ role: 'user'|'assistant', content }]
+  prayerLog: {},  // { 'YYYY-MM-DD': { fajr: true, … } }
 });
 
 function load() {
@@ -205,6 +208,7 @@ const routes = {
   scorecard: viewScorecard,
   laws: viewLaws,
   coach: viewCoach,
+  prayers: viewPrayers,
 };
 
 function render() {
@@ -213,7 +217,7 @@ function render() {
   const fn = routes[route] || viewToday;
   $('#view').innerHTML = fn(a, b);
 
-  const tab = { habit: 'habits', h: 'habits', goal: 'goals', scorecard: 'more', laws: 'more' }[route] || route;
+  const tab = { habit: 'habits', h: 'habits', goal: 'goals', scorecard: 'more', laws: 'more', prayers: 'today' }[route] || route;
   document.querySelectorAll('.tabbar a').forEach(el => {
     if (el.dataset.tab === tab) el.setAttribute('aria-current', 'page');
     else el.removeAttribute('aria-current');
@@ -242,6 +246,12 @@ function viewToday() {
   const due = habits.filter(h => isScheduled(h, d))
     .sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
   const extra = habits.filter(h => !isScheduled(h, d));
+  const pts = prayerTimes(d);
+  const timeline = [
+    ...due.map(h => ({ at: h.time || '99:99', html: () => habitRow(h, d, isToday) })),
+    ...(pts ? PRAYERS.map(p => ({ at: hhmm(pts[p]), html: () => prayerRow(p, pts, d, isToday) })) : []),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const prayedN = pts ? PRAYERS.filter(p => state.prayerLog[dkey(d)]?.[p]).length : 0;
   const done = due.filter(h => isDone(h, d)).length;
   const ratio = due.length ? done / due.length : 0;
   const C = 2 * Math.PI * 28;
@@ -259,10 +269,11 @@ function viewToday() {
         <p>${esc(t('emptyBody'))}</p>
         <a class="btn primary" href="#/habit/new">${I.plus} ${esc(t('createFirst'))}</a>
       </div>
+      ${pts ? `<ul class="habit-list" style="margin-top:12px">${timeline.map(x => x.html()).join('')}</ul>` : ''}
       ${installCard()}`;
   } else {
     body = `
-      ${due.length ? `<ul class="habit-list">${due.map(h => habitRow(h, d, isToday)).join('')}</ul>`
+      ${timeline.length ? `<ul class="habit-list">${timeline.map(x => x.html()).join('')}</ul>`
         : `<div class="card empty"><p>${esc(t(isToday ? 'nothingToday' : 'nothingThatDay'))}</p></div>`}
       ${extra.length ? `<h2>${esc(t('bonus'))}</h2>
         <ul class="habit-list">${extra.map(h => habitRow(h, d, false)).join('')}</ul>` : ''}
@@ -275,6 +286,7 @@ function viewToday() {
       <div class="titles">
         <div class="eyebrow">${esc(isToday ? greet : t('lookingBack'))}</div>
         <h1>${esc(fmtLong(d))}</h1>
+        ${pts ? `<a class="prayer-sum" href="#/prayers">${I.moon}${esc(t('prayersCount', prayedN, PRAYERS.length))}</a>` : ''}
       </div>
       ${due.length ? `
       <div class="ring" aria-label="${esc(t('ringLabel', done, due.length))}">
@@ -582,6 +594,8 @@ function viewProgress() {
     <h2>${esc(t('habits14'))}</h2>
     <div class="card">${rows}</div>
 
+    ${prayerProgress()}
+
     <h2>${esc(t('identityVotes'))}</h2>
     <div class="card">
       ${idRows.length ? idRows.map(([k, n]) => `
@@ -706,6 +720,7 @@ function viewMore() {
     <h2>${esc(t('tools'))}</h2>
     <div class="card">
       <ul class="menu">
+        <li><a href="#/prayers"><span class="ico">${I.moon}</span><span>${esc(t('prayers'))}<small>${esc(t('prayersMenuSub'))}</small></span></a></li>
         <li><a href="#/scorecard"><span class="ico">${I.list}</span><span>${esc(t('scorecard'))}<small>${esc(t('scorecardSub'))}</small></span></a></li>
         <li><a href="#/laws"><span class="ico">${I.book}</span><span>${esc(t('lawsMenu'))}<small>${esc(t('lawsMenuSub'))}</small></span></a></li>
       </ul>
@@ -1047,7 +1062,9 @@ function aiProgress() {
 function coachContext() {
   const hl = activeHabits().map(h => `- ${h.name}${h.identity ? ` (${t('iAmX', h.identity)})` : ''}${h.type === 'break' ? ` · ${t('breakingChip')}` : ''} · ${scheduleLabel(h.days)}${h.time ? ` · ${h.time}` : ''}${h.duration ? ` · ${fmtDur(h.duration)}` : ''} · ${t('days30')}: ${pct(rate(h, 30))} · ${t('streak')}: ${currentStreak(h)}`).join('\n');
   const gl = state.goals.map(g => `- ${g.title}${g.why ? ` — ${g.why}` : ''}`).join('\n');
-  return t('aiSystem', hl || t('aiNone'), gl || t('aiNone'));
+  const pts = prayerTimes(today());
+  const pl = pts ? `\n- ${t('prayerTimesToday')}: ${PRAYERS.map(p => `${t('prayer_' + p)} ${hhmm(pts[p])}`).join(', ')}` : '';
+  return t('aiSystem', (hl || t('aiNone')) + pl, gl || t('aiNone'));
 }
 
 function fmtMsg(text) {
@@ -1307,6 +1324,248 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && timer && !$('#timer').hidden && !timer.started) closeTimer();
 });
 
+/* =========================================================
+   Prayer times — computed on-device with Adhan (MIT) from
+   the phone's location. Each prayer is a 15-minute block.
+   ========================================================= */
+const PRAYERS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+const PRAYER_AR = { fajr: 'الفجر', dhuhr: 'الظهر', asr: 'العصر', maghrib: 'المغرب', isha: 'العشاء' };
+const PRAYER_BLOCK = 15;
+const PRAYER_COLOR = '#2b6c8f';
+const PRAYER_METHODS = {
+  mwl: () => adhan.CalculationMethod.MuslimWorldLeague(),
+  uoif: () => new adhan.CalculationParameters('Other', 12, 12),
+  morocco: () => new adhan.CalculationParameters('Other', 19, 17),
+  egyptian: () => adhan.CalculationMethod.Egyptian(),
+  karachi: () => adhan.CalculationMethod.Karachi(),
+  ummalqura: () => adhan.CalculationMethod.UmmAlQura(),
+  dubai: () => adhan.CalculationMethod.Dubai(),
+  qatar: () => adhan.CalculationMethod.Qatar(),
+  kuwait: () => adhan.CalculationMethod.Kuwait(),
+  moonsighting: () => adhan.CalculationMethod.MoonsightingCommittee(),
+  isna: () => adhan.CalculationMethod.NorthAmerica(),
+  singapore: () => adhan.CalculationMethod.Singapore(),
+  turkey: () => adhan.CalculationMethod.Turkey(),
+  tehran: () => adhan.CalculationMethod.Tehran(),
+};
+const TZ_METHOD = {
+  'Europe/Paris': 'uoif', 'Africa/Casablanca': 'morocco', 'Africa/El_Aaiun': 'morocco',
+  'Asia/Riyadh': 'ummalqura', 'Asia/Dubai': 'dubai', 'Asia/Muscat': 'dubai', 'Asia/Qatar': 'qatar',
+  'Asia/Kuwait': 'kuwait', 'Asia/Bahrain': 'kuwait', 'Africa/Cairo': 'egyptian',
+  'Asia/Karachi': 'karachi', 'Asia/Kolkata': 'karachi', 'Asia/Dhaka': 'karachi',
+  'Europe/Istanbul': 'turkey', 'Asia/Tehran': 'tehran',
+  'Asia/Singapore': 'singapore', 'Asia/Kuala_Lumpur': 'singapore', 'Asia/Jakarta': 'singapore',
+};
+const currentTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) { return ''; } };
+function autoMethod() {
+  const tz = currentTz();
+  return TZ_METHOD[tz] || (/^America\//.test(tz) ? 'moonsighting' : 'mwl');
+}
+const prayerCfg = () => (state.settings.prayer ||= { on: false, autoLoc: true, madhab: 'shafi', adj: {} });
+const prayerMethod = () => (PRAYER_METHODS[prayerCfg().method] ? prayerCfg().method : autoMethod());
+const hhmm = dt => `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+
+function prayerTimes(d) {
+  const c = state.settings.prayer;
+  if (!c || !c.on || c.lat == null || typeof adhan === 'undefined') return null;
+  try {
+    const coords = new adhan.Coordinates(c.lat, c.lng);
+    const params = PRAYER_METHODS[prayerMethod()]();
+    params.madhab = c.madhab === 'hanafi' ? adhan.Madhab.Hanafi : adhan.Madhab.Shafi;
+    params.highLatitudeRule = adhan.HighLatitudeRule.recommended(coords);
+    params.polarCircleResolution = adhan.PolarCircleResolution.AqrabYaum;
+    for (const p of PRAYERS) params.adjustments[p] = (params.adjustments[p] || 0) + (Number(c.adj?.[p]) || 0);
+    const pt = new adhan.PrayerTimes(coords, new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12), params);
+    if (PRAYERS.some(p => !(pt[p] instanceof Date) || isNaN(pt[p]))) return null;
+    return { fajr: pt.fajr, sunrise: pt.sunrise, dhuhr: pt.dhuhr, asr: pt.asr, maghrib: pt.maghrib, isha: pt.isha };
+  } catch (_) { return null; }
+}
+
+const fmtIn = ms => { const m = Math.max(1, Math.round(ms / 60000)); return m >= 60 ? `${Math.floor(m / 60)} h ${pad(m % 60)}` : `${m} ${t('minUnit')}`; };
+
+function prayerRow(p, pts, d, isToday) {
+  const k = dkey(d);
+  const done = !!state.prayerLog[k]?.[p];
+  const start = pts[p], end = new Date(start.getTime() + PRAYER_BLOCK * 60000);
+  const now = new Date();
+  const chips = [];
+  if (isToday && !done) {
+    const next = PRAYERS.find(x => pts[x] > now);
+    if (now >= start && now < end) chips.push(`<span class="chip now">${esc(t('prayerNow'))}</span>`);
+    else if (next === p) chips.push(`<span class="chip">${esc(t('prayerIn', fmtIn(start - now)))}</span>`);
+  }
+  const meta = `${fmtTime(hhmm(start))}–${fmtTime(hhmm(end))}${p === 'fajr' && pts.sunrise ? ` · ${t('sunrise')} ${fmtTime(hhmm(pts.sunrise))}` : ''}`;
+  return `
+    <li class="habit prayer ${done ? 'is-done' : ''}" style="--c:${PRAYER_COLOR}">
+      <button class="check" data-action="pray" data-p="${p}" data-date="${k}" aria-pressed="${done}" aria-label="${esc(t('prayed', t('prayer_' + p)))}">${I.check}</button>
+      <a class="habit-body" href="#/prayers">
+        <span class="habit-name">${esc(t('prayer_' + p))} <span class="ar" lang="ar">${PRAYER_AR[p]}</span></span>
+        <span class="habit-meta">${esc(meta)}</span>
+        ${chips.length ? `<span class="chips">${chips.join('')}</span>` : ''}
+      </a>
+      <span class="moon" aria-hidden="true">${I.moon}</span>
+    </li>`;
+}
+
+function relTime(ms) {
+  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' });
+  const m = Math.round((ms - Date.now()) / 60000);
+  if (Math.abs(m) < 60) return rtf.format(m, 'minute');
+  const h = Math.round(m / 60);
+  return Math.abs(h) < 24 ? rtf.format(h, 'hour') : rtf.format(Math.round(h / 24), 'day');
+}
+
+function prayerLocate(silent) {
+  if (!navigator.geolocation) { if (!silent) toast(t('locUnavailable')); return; }
+  if (ui.locating) return;
+  ui.locating = true;
+  if (!silent) rerender();
+  navigator.geolocation.getCurrentPosition(pos => {
+    const c = prayerCfg();
+    c.lat = +pos.coords.latitude.toFixed(3);
+    c.lng = +pos.coords.longitude.toFixed(3);
+    c.locAt = Date.now(); c.tz = currentTz();
+    ui.locating = false; save();
+    if (!silent) toast(t('locUpdated'));
+    const route = location.hash || '#/today';
+    if (!silent || route === '#/today' || route === '#/prayers') rerender();
+  }, err => {
+    ui.locating = false;
+    if (!silent) { toast(t(err.code === 1 ? 'locDenied' : 'locFailed')); rerender(); }
+  }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60000 });
+}
+
+/** Quietly refresh the position when the app opens, if the user already granted access. */
+async function prayerAutoLocate() {
+  const c = state.settings.prayer;
+  if (!c?.on || c.autoLoc === false || !navigator.permissions?.query) return;
+  const stale = !c.locAt || Date.now() - c.locAt > 30 * 60000 || c.tz !== currentTz();
+  if (!stale) return;
+  try {
+    const perm = await navigator.permissions.query({ name: 'geolocation' });
+    if (perm.state === 'granted') prayerLocate(true);
+  } catch (_) { /* not supported */ }
+}
+
+function viewPrayers() {
+  const c = prayerCfg();
+  const pts = prayerTimes(today());
+  const methodName = k => t('methods')[k];
+  return `
+    <a class="back" href="#/today">${I.left} ${esc(t('today'))}</a>
+    <header class="page-head"><div><h1>${esc(t('prayers'))}</h1><div class="sub">${esc(t('prayersSub'))}</div></div></header>
+
+    <div class="card">
+      <label class="switch-row"><span>${esc(t('prayerShow'))}</span>
+        <input type="checkbox" class="switch" data-prayer="on" ${c.on ? 'checked' : ''}></label>
+    </div>
+
+    ${c.on ? `
+    <h2>${esc(t('yourLocation'))}</h2>
+    <div class="card">
+      ${c.lat != null ? `
+        <div class="row"><span class="ico-inline">${I.pin}</span><b>${num(Math.abs(c.lat), 3)}° ${c.lat >= 0 ? 'N' : 'S'} · ${num(Math.abs(c.lng), 3)}° ${c.lng >= 0 ? 'E' : (lang() === 'fr' ? 'O' : 'W')}</b></div>
+        <p class="small muted" style="margin:4px 0 12px">${c.locAt ? esc(t('locUpdatedAgo', relTime(c.locAt))) : ''}${c.tz ? ` · ${esc(c.tz.replace(/_/g, ' '))}` : ''}</p>`
+      : `<p class="small muted" style="margin-top:0">${esc(t('locNone'))}</p>`}
+      <button class="btn ${c.lat == null ? 'primary' : ''} block" data-action="prayer-locate" ${ui.locating ? 'disabled' : ''}>${I.pin} ${esc(t(ui.locating ? 'locating' : c.lat == null ? 'useLocation' : 'updateLocation'))}</button>
+      <label class="check-row"><input type="checkbox" data-prayer="autoLoc" ${c.autoLoc !== false ? 'checked' : ''}> ${esc(t('autoLoc'))}</label>
+      <details class="more-opts">
+        <summary>${esc(t('manualCoords'))}</summary>
+        <form class="two" data-form="prayer-coords" style="margin-top:10px">
+          <label class="field"><span>${esc(t('latitude'))}</span><input type="text" inputmode="decimal" name="lat" value="${c.lat ?? ''}" placeholder="48.857"></label>
+          <label class="field"><span>${esc(t('longitude'))}</span><input type="text" inputmode="decimal" name="lng" value="${c.lng ?? ''}" placeholder="2.352"></label>
+          <button class="btn sm" type="submit" style="grid-column:1/-1">${esc(t('saveT2'))}</button>
+        </form>
+      </details>
+    </div>
+
+    ${pts ? `
+    <h2>${esc(t('today'))}</h2>
+    <div class="card">
+      <ul class="times">
+        ${PRAYERS.map(p => `<li><span>${esc(t('prayer_' + p))} <span class="ar" lang="ar">${PRAYER_AR[p]}</span></span><b>${esc(fmtTime(hhmm(pts[p])))}</b></li>
+          ${p === 'fajr' ? `<li class="muted"><span>${esc(t('sunrise'))}</span><span>${esc(fmtTime(hhmm(pts.sunrise)))}</span></li>` : ''}`).join('')}
+      </ul>
+    </div>` : ''}
+
+    <h2>${esc(t('calcMethod'))}</h2>
+    <div class="card">
+      <label class="field" style="margin-top:0"><span>${esc(t('calcMethod'))}</span>
+        <select data-prayer="method">
+          <option value="" ${!PRAYER_METHODS[c.method] ? 'selected' : ''}>${esc(t('methodAuto', methodName(autoMethod())))}</option>
+          ${Object.keys(PRAYER_METHODS).map(k => `<option value="${k}" ${c.method === k ? 'selected' : ''}>${esc(methodName(k))}</option>`).join('')}
+        </select></label>
+      <label class="field"><span>${esc(t('asrLabel'))}</span>
+        <select data-prayer="madhab">
+          <option value="shafi" ${c.madhab !== 'hanafi' ? 'selected' : ''}>${esc(t('asrShafi'))}</option>
+          <option value="hanafi" ${c.madhab === 'hanafi' ? 'selected' : ''}>${esc(t('asrHanafi'))}</option>
+        </select></label>
+      <details class="more-opts">
+        <summary>${esc(t('adjustMinutes'))}</summary>
+        <p class="small muted">${esc(t('adjustHint'))}</p>
+        <div class="adj">${PRAYERS.map(p => `
+          <label class="field"><span>${esc(t('prayer_' + p))}</span><span class="suffix">
+            <input type="number" inputmode="numeric" min="-30" max="30" step="1" data-prayer="adj" data-p="${p}" value="${Number(c.adj?.[p]) || 0}"><em>${esc(t('minUnit'))}</em></span></label>`).join('')}
+        </div>
+      </details>
+    </div>` : ''}
+  `;
+}
+
+function prayerProgress() {
+  const c = state.settings.prayer;
+  if (!c?.on) return '';
+  const td = today();
+  const since = c.since || dkey(td);
+  const rows = PRAYERS.map(p => {
+    let dots = '', sched = 0, done = 0;
+    for (let i = 13; i >= 0; i--) {
+      const d = addDays(td, -i), k = dkey(d);
+      const did = !!state.prayerLog[k]?.[p];
+      const counts = k >= since && (i > 0 || did);
+      if (counts) { sched++; if (did) done++; }
+      dots += `<i class="${did ? 'd' : counts ? '' : 'o'}"></i>`;
+    }
+    return `<a class="prog-row" href="#/prayers" style="--c:${PRAYER_COLOR}"><span class="name">${esc(t('prayer_' + p))}</span>
+      <span class="dots" aria-hidden="true">${dots}</span><span class="pct">${pct(sched ? done / sched : 0)}</span></a>`;
+  }).join('');
+  return `<h2>${esc(t('prayers14'))}</h2><div class="card">${rows}</div>`;
+}
+
+Object.assign(actions, {
+  pray(el) {
+    const k = el.dataset.date, p = el.dataset.p;
+    const now = !state.prayerLog[k]?.[p];
+    if (now) { (state.prayerLog[k] ||= {})[p] = true; navigator.vibrate?.(12); }
+    else { delete state.prayerLog[k][p]; if (!Object.keys(state.prayerLog[k]).length) delete state.prayerLog[k]; }
+    save(); rerender();
+  },
+  'prayer-locate'() { prayerLocate(false); },
+});
+forms['prayer-coords'] = f => {
+  const lat = parseFloat(String(f.elements.lat.value).replace(',', '.'));
+  const lng = parseFloat(String(f.elements.lng.value).replace(',', '.'));
+  if (!(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180)) { toast(t('coordsInvalid')); return; }
+  const c = prayerCfg();
+  Object.assign(c, { lat: +lat.toFixed(3), lng: +lng.toFixed(3), locAt: Date.now(), tz: currentTz(), autoLoc: false });
+  save(); toast(t('locUpdated')); rerender();
+};
+document.addEventListener('change', e => {
+  const el = e.target, key = el.dataset?.prayer;
+  if (!key) return;
+  const c = prayerCfg();
+  if (key === 'on') {
+    c.on = el.checked;
+    if (c.on && !c.since) c.since = dkey(today());
+    if (c.on && c.lat == null) { save(); rerender(); prayerLocate(false); return; }
+  }
+  if (key === 'autoLoc') c.autoLoc = el.checked;
+  if (key === 'method') c.method = el.value || null;
+  if (key === 'madhab') c.madhab = el.value;
+  if (key === 'adj') { (c.adj ||= {})[el.dataset.p] = Math.max(-30, Math.min(30, parseInt(el.value, 10) || 0)); }
+  save(); rerender();
+});
+
 /* ---------- UI utilities ---------- */
 let toastT;
 function toast(msg) {
@@ -1332,6 +1591,7 @@ function checkDayChange() {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   checkDayChange();
+  prayerAutoLocate();
   if (timer?.endsAt) { if (timerLeft() <= 0) finishTimer(); else keepAwake(); }
 });
 setInterval(checkDayChange, 60000);
@@ -1348,3 +1608,4 @@ navigator.storage?.persist?.();
 applyLangChrome();
 render();
 if (timer) renderTimer();
+prayerAutoLocate();
