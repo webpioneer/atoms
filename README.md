@@ -1,6 +1,6 @@
 # Atoms — an Atomic Habits tracker (PWA)
 
-A habit, goal and progress tracker built on the ideas in *Atomic Habits*. Plain HTML/CSS/JS with no build step. It works offline, and all data stays on your device in `localStorage`.
+A habit, goal and progress tracker built on the ideas in *Atomic Habits*, in English and French (it follows the phone's language; switch under More → Language). Plain HTML/CSS/JS with no build step. It works offline, and all data stays on your device in `localStorage`.
 
 ## Run locally
 

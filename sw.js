@@ -1,9 +1,10 @@
 /* Offline-first service worker: serve from cache, refresh in the background. */
-const CACHE = 'atoms-v1';
+const CACHE = 'atoms-v2';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './i18n.js',
   './app.js',
   './manifest.webmanifest',
   './icons/icon.svg',
