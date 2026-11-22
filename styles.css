@@ -432,3 +432,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: .75; }
 .times b { font-variant-numeric: tabular-nums; }
 .adj { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0 10px; }
 .ico-inline svg { stroke: #2b6c8f; }
+
+/* Today sections */
+h2.sec { margin: 4px 0 10px; font-size: 13px; font-family: var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.habit-list + h2.sec { margin-top: 22px; }

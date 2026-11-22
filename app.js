@@ -247,8 +247,9 @@ function viewToday() {
     .sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
   const extra = habits.filter(h => !isScheduled(h, d));
   const pts = prayerTimes(d);
+  const anytime = due.filter(h => !h.time);
   const timeline = [
-    ...due.map(h => ({ at: h.time || '99:99', html: () => habitRow(h, d, isToday) })),
+    ...due.filter(h => h.time).map(h => ({ at: h.time, html: () => habitRow(h, d, isToday) })),
     ...(pts ? PRAYERS.map(p => ({ at: hhmm(pts[p]), html: () => prayerRow(p, pts, d, isToday) })) : []),
   ].sort((a, b) => a.at.localeCompare(b.at));
   const prayedN = pts ? PRAYERS.filter(p => state.prayerLog[dkey(d)]?.[p]).length : 0;
@@ -273,8 +274,11 @@ function viewToday() {
       ${installCard()}`;
   } else {
     body = `
-      ${timeline.length ? `<ul class="habit-list">${timeline.map(x => x.html()).join('')}</ul>`
-        : `<div class="card empty"><p>${esc(t(isToday ? 'nothingToday' : 'nothingThatDay'))}</p></div>`}
+      ${anytime.length ? `<h2 class="sec">${esc(t('anytime'))}</h2>
+        <ul class="habit-list">${anytime.map(h => habitRow(h, d, isToday)).join('')}</ul>` : ''}
+      ${timeline.length ? `${anytime.length ? `<h2 class="sec">${esc(t('throughDay'))}</h2>` : ''}
+        <ul class="habit-list">${timeline.map(x => x.html()).join('')}</ul>` : ''}
+      ${!anytime.length && !timeline.length ? `<div class="card empty"><p>${esc(t(isToday ? 'nothingToday' : 'nothingThatDay'))}</p></div>` : ''}
       ${extra.length ? `<h2>${esc(t('bonus'))}</h2>
         <ul class="habit-list">${extra.map(h => habitRow(h, d, false)).join('')}</ul>` : ''}
     `;
