@@ -1007,6 +1007,7 @@ function aiEnsure() {
   ai.loading = (async () => {
     if (!(await webgpuOk())) { ai.status = 'unsupported'; aiRefresh(); return false; }
     ai.status = 'loading'; ai.progress = 0; ai.error = ''; aiRefresh();
+    aiWake();
     try {
       const lib = await aiLib();
       ai.worker?.terminate(); ai.engine = null;
@@ -1016,17 +1017,25 @@ function aiEnsure() {
       });
       ai.model = key; ai.status = 'ready';
       state.settings.aiModel = key; save();
-      aiRefresh();
+      aiWakeRelease(); aiRefresh();
       return true;
     } catch (e) {
       ai.worker?.terminate(); ai.worker = null; ai.engine = null;
       ai.status = 'error'; ai.error = String(e?.message || e).slice(0, 160);
-      aiRefresh();
+      aiWakeRelease(); aiRefresh();
       return false;
     }
   })();
   return ai.loading;
 }
+
+// Android/iOS pause web apps when the screen locks, which stalls the long first
+// download. Keep the screen awake while the model downloads and loads.
+let aiWakeLock = null;
+async function aiWake() {
+  try { if (!aiWakeLock && navigator.wakeLock && document.visibilityState === 'visible') { aiWakeLock = await navigator.wakeLock.request('screen'); aiWakeLock.addEventListener('release', () => { aiWakeLock = null; }); } } catch (_) { /* optional */ }
+}
+function aiWakeRelease() { try { aiWakeLock?.release(); } catch (_) { /* ignore */ } aiWakeLock = null; }
 
 /** Re-open a model downloaded in an earlier session, without ever starting a fresh download. */
 async function aiAutoStart() {
@@ -1042,7 +1051,8 @@ function aiPanel(where) {
   const s = ai.status;
   if (s === 'loading') {
     const p = Math.round(ai.progress * 100);
-    return `<div class="meter"><i style="width:${p}%"></i></div><p class="small muted" data-ai-pct>${esc(t('aiLoading'))} ${p}%</p>`;
+    return `<div class="meter"><i style="width:${p}%"></i></div><p class="small muted" data-ai-pct>${esc(t('aiLoading'))} ${p}%</p>
+      ${state.settings.aiModel ? '' : `<p class="small ai-note">${esc(t('aiKeepOpen'))}</p>`}`;
   }
   if (s === 'unsupported') return `<p class="small ai-warn">${esc(t('aiUnsupported'))}</p>`;
   if (s === 'error') return `<p class="small ai-warn">${esc(t('aiError', ai.error))}</p><button class="btn sm" data-action="ai-start">${esc(t('retry'))}</button>`;
@@ -1596,6 +1606,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   checkDayChange();
   prayerAutoLocate();
+  if (ai.status === 'loading') aiWake();
   if (timer?.endsAt) { if (timerLeft() <= 0) finishTimer(); else keepAwake(); }
 });
 setInterval(checkDayChange, 60000);

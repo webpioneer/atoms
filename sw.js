@@ -1,6 +1,6 @@
 /* Offline-first service worker: serve from cache, refresh in the background.
    The AI library (vendor/) is cached on first use; model weights are cached by WebLLM itself. */
-const CACHE = 'atoms-v5';
+const CACHE = 'atoms-v6';
 const ASSETS = [
   './',
   './index.html',
