@@ -497,3 +497,6 @@ h2.sec { margin: 4px 0 10px; font-size: 13px; font-family: var(--sans); text-tra
 .check.count .cnum { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 15px; color: var(--c); }
 .check.count.full .cnum svg { width: 22px; height: 22px; fill: none; stroke: var(--c); stroke-width: 3; }
 .countchip { cursor: pointer; font-weight: 600; color: var(--c); border-color: color-mix(in srgb, var(--c) 35%, transparent); background: color-mix(in srgb, var(--c) 8%, transparent); }
+
+.form[data-sched="weekly"] .sched-days-only { display: none; }
+.form[data-sched="days"] .sched-weekly-only { display: none; }

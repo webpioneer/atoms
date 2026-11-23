@@ -119,9 +119,12 @@ const endTime = (tm, m) => {
 const habitById = id => state.habits.find(h => h.id === id);
 const activeHabits = () => state.habits.filter(h => !h.archived);
 const existedOn = (h, d) => dkey(d) >= h.createdAt;
-const isScheduled = (h, d) => existedOn(h, d) && h.days.includes(d.getDay());
+const isScheduled = (h, d) => existedOn(h, d) && !isWeekly(h) && h.days.includes(d.getDay());
 const isDone = (h, d) => !!state.log[dkey(d)]?.[h.id];
 const isCount = h => h.goalCount > 0;
+const isWeekly = h => h.sched === 'weekly' && h.perWeek > 0;
+function weekCountDone(h, wkStart) { let c = 0; const tk = dkey(today()); for (let i = 0; i < 7; i++) { const d = addDays(wkStart, i); if (dkey(d) > tk) break; if (existedOn(h, d) && isDone(h, d)) c++; } return c; }
+const weeklyMet = (h, wkStart) => weekCountDone(h, wkStart) >= h.perWeek;
 const getCount = (h, d) => (state.counts?.[h.id]?.[dkey(d)]) || 0;
 function setCount(h, d, n) {
   const k = dkey(d); n = Math.max(0, Math.round(n));
@@ -140,7 +143,15 @@ function setDone(h, d, val) {
   save();
 }
 
+function weeklyStreak(h) {
+  let n = 0, wk = weekStartMon(today());
+  if (weeklyMet(h, wk)) n++;
+  wk = addDays(wk, -7);
+  for (let i = 0; i < 520 && addDays(wk, 6) >= parseKey(h.createdAt); i++, wk = addDays(wk, -7)) { if (weeklyMet(h, wk)) n++; else break; }
+  return n;
+}
 function currentStreak(h) {
+  if (isWeekly(h)) return weeklyStreak(h);
   let d = today(), n = 0;
   if (!isDone(h, d)) d = addDays(d, -1); // today still pending doesn't break the chain
   for (let i = 0; i < 3660 && existedOn(h, d); i++, d = addDays(d, -1)) {
@@ -151,6 +162,14 @@ function currentStreak(h) {
 }
 
 function bestStreak(h) {
+  if (isWeekly(h)) {
+    let best = 0, run = 0;
+    for (let wk = weekStartMon(parseKey(h.createdAt)); wk <= weekStartMon(today()); wk = addDays(wk, 7)) {
+      if (weeklyMet(h, wk)) { run++; best = Math.max(best, run); }
+      else if (dkey(wk) !== dkey(weekStartMon(today()))) run = 0;
+    }
+    return best;
+  }
   let best = 0, run = 0;
   const end = today();
   for (let d = parseKey(h.createdAt); d <= end; d = addDays(d, 1)) {
@@ -162,6 +181,13 @@ function bestStreak(h) {
 
 /** completion rate over the last `n` days (today counts only if done) */
 function rate(h, n) {
+  if (isWeekly(h)) {
+    const weeks = Math.max(1, Math.round(n / 7)); let met = 0, tot = 0, wk = weekStartMon(today());
+    for (let i = 0; i < weeks && addDays(wk, 6) >= parseKey(h.createdAt); i++, wk = addDays(wk, -7)) {
+      if (i === 0 && !weeklyMet(h, wk)) continue; tot++; if (weeklyMet(h, wk)) met++;
+    }
+    return tot ? met / tot : 0;
+  }
   let sched = 0, done = 0;
   const td = today();
   for (let i = 0; i < n; i++) {
@@ -181,6 +207,7 @@ function totalVotes(h) {
 
 /** Was the previous scheduled day (before d) missed? → "never miss twice" */
 function missedPrevious(h, d) {
+  if (isWeekly(h)) return false;
   let p = addDays(d, -1);
   for (let i = 0; i < 7 && existedOn(h, p); i++, p = addDays(p, -1)) {
     if (isScheduled(h, p)) return !isDone(h, p);
@@ -188,6 +215,7 @@ function missedPrevious(h, d) {
   return false;
 }
 
+function schedText(h) { return isWeekly(h) ? t('perWeekShort', h.perWeek) : scheduleLabel(h.days); }
 function scheduleLabel(days) {
   const s = [...days].sort().join('');
   if (s === '0123456') return t('everyDay');
@@ -260,7 +288,8 @@ function viewToday() {
   const habits = activeHabits().filter(h => existedOn(h, d));
   const due = habits.filter(h => isScheduled(h, d))
     .sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
-  const extra = habits.filter(h => !isScheduled(h, d));
+  const weeklyH = habits.filter(h => isWeekly(h));
+  const extra = habits.filter(h => !isScheduled(h, d) && !isWeekly(h));
   const pts = prayerTimes(d);
   const canAnchor = h => h.afterPrayer && PRAYERS.includes(h.afterPrayer) && pts && pts[h.afterPrayer];
   const anytime = [], timed = [], anchored = [];
@@ -296,7 +325,9 @@ function viewToday() {
         <ul class="habit-list">${anytime.map(h => habitRow(h, d, isToday)).join('')}</ul>` : ''}
       ${timeline.length ? `${anytime.length ? `<h2 class="sec">${esc(t('throughDay'))}</h2>` : ''}
         <ul class="habit-list">${timeline.map(x => x.html()).join('')}</ul>` : ''}
-      ${!anytime.length && !timeline.length ? `<div class="card empty"><p>${esc(t(isToday ? 'nothingToday' : 'nothingThatDay'))}</p></div>` : ''}
+      ${weeklyH.length ? `<h2 class="sec">${esc(t('weeklySection'))}</h2>
+        <ul class="habit-list">${weeklyH.map(h => weeklyRow(h, d, isToday)).join('')}</ul>` : ''}
+      ${!anytime.length && !timeline.length && !weeklyH.length ? `<div class="card empty"><p>${esc(t(isToday ? 'nothingToday' : 'nothingThatDay'))}</p></div>` : ''}
       ${extra.length ? `<h2>${esc(t('bonus'))}</h2>
         <ul class="habit-list">${extra.map(h => habitRow(h, d, false)).join('')}</ul>` : ''}
     `;
@@ -369,6 +400,20 @@ function habitRow(h, d, canWarn) {
     </li>`;
 }
 
+function weeklyRow(h, d, isToday) {
+  const wk = weekStartMon(d);
+  const c = weekCountDone(h, wk), met = c >= h.perWeek, todayDone = isDone(h, d), sN = currentStreak(h);
+  return `
+    <li class="habit ${todayDone ? 'is-done' : ''}" style="--c:${esc(h.color)}" data-hid="${h.id}">
+      <button class="check" data-action="toggle" data-id="${h.id}" data-date="${dkey(d)}" aria-pressed="${todayDone}" aria-label="${esc(t('doneAria', h.name))}">${I.check}</button>
+      <a class="habit-body" href="#/h/${h.id}">
+        <span class="habit-name">${esc(h.name)}</span>
+        ${h.identity ? `<span class="habit-meta">${esc(t('iAmX', h.identity))}</span>` : (cueLine(h) ? `<span class="habit-meta">${esc(cueLine(h))}</span>` : '')}
+        <span class="chips"><span class="chip ${met ? 'break' : ''}">${c}/${h.perWeek} ${esc(t('thisWeekShort'))}</span></span>
+      </a>
+      <span class="streak ${sN >= 3 ? 'hot' : ''}" title="${esc(t('streakTitle'))}">${I.flame}${sN}</span>
+    </li>`;
+}
 function viewHabits() {
   const act = activeHabits();
   const arch = state.habits.filter(h => h.archived);
@@ -376,7 +421,7 @@ function viewHabits() {
     <a class="habit" href="#/h/${h.id}" style="--c:${esc(h.color)};text-decoration:none">
       <span class="habit-body">
         <span class="habit-name">${esc(h.name)}</span>
-        <span class="habit-meta">${h.identity ? `${esc(t('iAmX', h.identity))} · ` : ''}${esc(scheduleLabel(h.days))}</span>
+        <span class="habit-meta">${h.identity ? `${esc(t('iAmX', h.identity))} · ` : ''}${esc(schedText(h))}</span>
       </span>
       <span class="streak ${currentStreak(h) >= 3 ? 'hot' : ''}">${I.flame}${currentStreak(h)}</span>
     </a>`;
@@ -411,7 +456,7 @@ function viewHabitForm(id) {
     <a class="back" href="${h ? `#/h/${h.id}` : '#/habits'}">${I.left} ${esc(t('back'))}</a>
     <header class="page-head"><h1>${esc(t(h ? 'editHabit' : 'newHabit'))}</h1></header>
 
-    <form class="form" data-form="habit" data-id="${h ? h.id : ''}" data-type="${v.type}" autocomplete="off">
+    <form class="form" data-form="habit" data-id="${h ? h.id : ''}" data-type="${v.type}" data-sched="${v.sched === 'weekly' ? 'weekly' : 'days'}" autocomplete="off">
       <fieldset>
         <div class="segmented" role="radiogroup" aria-label="${esc(t('habitType'))}">
           <input type="radio" id="t-build" name="type" value="build" ${v.type !== 'break' ? 'checked' : ''}><label for="t-build">${esc(t('buildHabit'))}</label>
@@ -478,7 +523,12 @@ ${h ? '' : `
 
       <fieldset class="law">
         <legend><span class="law-title">${esc(t('scheduleColor'))}</span></legend>
-        <div class="days" role="group" aria-label="${esc(t('days'))}">
+        <div class="segmented" role="radiogroup" aria-label="${esc(t('schedMode'))}">
+          <input type="radio" id="sched-days" name="sched" value="days" ${v.sched !== 'weekly' ? 'checked' : ''}><label for="sched-days">${esc(t('schedDays'))}</label>
+          <input type="radio" id="sched-weekly" name="sched" value="weekly" ${v.sched === 'weekly' ? 'checked' : ''}><label for="sched-weekly">${esc(t('schedWeekly'))}</label>
+        </div>
+        <label class="field sched-weekly-only"><span>${esc(t('perWeekLabel'))}</span><input type="number" name="perWeek" min="1" max="7" inputmode="numeric" value="${esc(v.perWeek || 3)}"><small>${esc(t('perWeekHint'))}</small></label>
+        <div class="days sched-days-only" role="group" aria-label="${esc(t('days'))}" style="margin-top:10px">
           ${[0, 1, 2, 3, 4, 5, 6].map(i => { const n = dayShort(i); return `<input type="checkbox" id="d${i}" name="days" value="${i}" ${v.days.includes(i) ? 'checked' : ''}><label for="d${i}">${esc(n[0])}<span class="sr">${esc(n.slice(1))}</span></label>`; }).join('')}
         </div>
         <div class="field"><span>${esc(t('color'))}</span>
@@ -524,7 +574,7 @@ function viewHabitDetail(id) {
   return `
     <a class="back" href="#/habits">${I.left} ${esc(t('habits'))}</a>
     <header class="page-head">
-      <div><div class="eyebrow">${esc(t(isBreak ? 'breakingLbl' : 'building'))} · ${esc(scheduleLabel(h.days))}${h.archived ? ` · ${esc(t('archivedLbl'))}` : ''}</div>
+      <div><div class="eyebrow">${esc(t(isBreak ? 'breakingLbl' : 'building'))} · ${esc(schedText(h))}${h.archived ? ` · ${esc(t('archivedLbl'))}` : ''}</div>
       <h1>${esc(h.name)}</h1></div>
       <a class="icon-btn" href="#/habit/edit/${h.id}" aria-label="${esc(t('edit'))}">${I.edit}</a>
     </header>
@@ -1036,6 +1086,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.name === 'type' && el.form?.dataset.form === 'habit') el.form.dataset.type = el.value;
+  if (el.name === 'sched' && el.form?.dataset.form === 'habit') el.form.dataset.sched = el.value;
   if (el.name === 'lang') { state.settings.lang = el.value; save(); applyLangChrome(); rerender(); }
   if (el.dataset.action === 'import' && el.files[0]) importFile(el.files[0]);
 });
@@ -1067,6 +1118,8 @@ const forms = {
       type: get('type') || 'build', name: get('name'),
       identity: get('identity').replace(/^(i am|je suis)\s+/i, ''),
       logType: LOG_TYPES.includes(get('logType')) ? get('logType') : '',
+      sched: get('sched') === 'weekly' ? 'weekly' : 'days',
+      perWeek: Math.min(7, Math.max(1, parseInt(get('perWeek'), 10) || 3)),
       goalCount: Math.max(0, parseInt(get('goalCount'), 10) || 0) || null,
       unit: get('unit'), step: Math.max(1, parseInt(get('step'), 10) || 1),
       afterPrayer: PRAYERS.includes(get('afterPrayer')) ? get('afterPrayer') : '',
@@ -1222,7 +1275,7 @@ function aiProgress() {
 }
 
 function coachContext() {
-  const hl = activeHabits().map(h => `- ${h.name}${h.identity ? ` (${t('iAmX', h.identity)})` : ''}${h.type === 'break' ? ` · ${t('breakingChip')}` : ''} · ${scheduleLabel(h.days)}${h.time ? ` · ${h.time}` : ''}${h.duration ? ` · ${fmtDur(h.duration)}` : ''} · ${t('days30')}: ${pct(rate(h, 30))} · ${t('streak')}: ${currentStreak(h)}`).join('\n');
+  const hl = activeHabits().map(h => `- ${h.name}${h.identity ? ` (${t('iAmX', h.identity)})` : ''}${h.type === 'break' ? ` · ${t('breakingChip')}` : ''} · ${schedText(h)}${h.time ? ` · ${h.time}` : ''}${h.duration ? ` · ${fmtDur(h.duration)}` : ''} · ${t('days30')}: ${pct(rate(h, 30))} · ${t('streak')}: ${currentStreak(h)}`).join('\n');
   const gl = state.goals.map(g => `- ${g.title}${g.why ? ` — ${g.why}` : ''}`).join('\n');
   const pts = prayerTimes(today());
   const pl = pts ? `\n- ${t('prayerTimesToday')}: ${PRAYERS.map(p => `${t('prayer_' + p)} ${hhmm(pts[p])}`).join(', ')}` : '';
