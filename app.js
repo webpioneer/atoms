@@ -186,7 +186,8 @@ function scheduleLabel(days) {
 
 function cueLine(h) {
   const bits = [];
-  if (h.stack) bits.push(t('afterX', h.stack));
+  if (h.afterPrayer && PRAYERS.includes(h.afterPrayer)) bits.push(t('afterX', t('prayer_' + h.afterPrayer)));
+  else if (h.stack) bits.push(t('afterX', h.stack));
   if (h.time) bits.push(h.duration ? `${fmtTime(h.time)}–${fmtTime(endTime(h.time, h.duration))}` : fmtTime(h.time));
   else if (h.duration) bits.push(fmtDur(h.duration));
   if (h.location) bits.push(h.location);
@@ -247,9 +248,12 @@ function viewToday() {
     .sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
   const extra = habits.filter(h => !isScheduled(h, d));
   const pts = prayerTimes(d);
-  const anytime = due.filter(h => !h.time);
+  const canAnchor = h => h.afterPrayer && PRAYERS.includes(h.afterPrayer) && pts && pts[h.afterPrayer];
+  const anytime = [], timed = [], anchored = [];
+  for (const h of due) { if (canAnchor(h)) anchored.push(h); else if (h.time) timed.push(h); else anytime.push(h); }
   const timeline = [
-    ...due.filter(h => h.time).map(h => ({ at: h.time, html: () => habitRow(h, d, isToday) })),
+    ...timed.map(h => ({ at: h.time, html: () => habitRow(h, d, isToday) })),
+    ...anchored.map(h => ({ at: hhmm(new Date(pts[h.afterPrayer].getTime() + PRAYER_BLOCK * 60000)), html: () => habitRow(h, d, isToday) })),
     ...(pts ? PRAYERS.map(p => ({ at: hhmm(pts[p]), html: () => prayerRow(p, pts, d, isToday) })) : []),
   ].sort((a, b) => a.at.localeCompare(b.at));
   const prayedN = pts ? PRAYERS.filter(p => state.prayerLog[dkey(d)]?.[p]).length : 0;
@@ -415,6 +419,12 @@ ${h ? '' : `
           <label class="field"><span>${esc(t('time'))}</span><input type="time" name="time" value="${esc(v.time)}" /></label>
           <label class="field"><span>${esc(t('duration'))}</span><span class="suffix"><input type="number" name="duration" min="1" max="720" step="1" inputmode="numeric" value="${esc(v.duration || '')}" placeholder="20" /><em>${esc(t('minUnit'))}</em></span></label>
         </div>
+        <label class="field"><span>${esc(t('afterPrayerLabel'))}</span>
+          <select name="afterPrayer">
+            <option value="">${esc(t('afterPrayerNone'))}</option>
+            ${PRAYERS.map(pr => `<option value="${pr}" ${v.afterPrayer === pr ? 'selected' : ''}>${esc(t('prayer_' + pr))}</option>`).join('')}
+          </select>
+          <small>${esc(t('afterPrayerHint'))}</small></label>
         ${f('location', 'location', 'locationPh')}
         ${f('stack', 'stackLabel', 'stackPh', 'stackHint')}
       `, 'only-build')}
@@ -465,7 +475,8 @@ function viewHabitDetail(id) {
       <p>${t('cStop', B(h.name))}</p>` : `
       ${h.identity ? `<p>${t('cIAm', B(h.identity))}</p>` : ''}
       <p>${t('cWill', B(h.name), h.time && B(fmtTime(h.time)), h.location && B(h.location), h.duration && B(fmtDur(h.duration)))}</p>
-      ${h.stack ? `<p>${t('cStack', B(h.stack), B(h.twoMin || h.name))}</p>` : ''}`;
+      ${h.afterPrayer && PRAYERS.includes(h.afterPrayer) ? `<p>${t('cAfterPrayer', B(t('prayer_' + h.afterPrayer)), B(h.twoMin || h.name))}</p>`
+        : h.stack ? `<p>${t('cStack', B(h.stack), B(h.twoMin || h.name))}</p>` : ''}`;
 
   const names = t(isBreak ? 'lawsBreak' : 'lawsBuild');
   const vals = isBreak
@@ -926,7 +937,9 @@ const forms = {
     Object.assign(h, {
       type: get('type') || 'build', name: get('name'),
       identity: get('identity').replace(/^(i am|je suis)\s+/i, ''),
-      time: get('time'), duration: Math.min(720, Math.max(0, parseInt(get('duration'), 10) || 0)) || null,
+      afterPrayer: PRAYERS.includes(get('afterPrayer')) ? get('afterPrayer') : '',
+      time: PRAYERS.includes(get('afterPrayer')) ? '' : get('time'),
+      duration: Math.min(720, Math.max(0, parseInt(get('duration'), 10) || 0)) || null,
       location: get('location'),
       stack: get('stack').replace(/^(after i|après)\s+/i, ''),
       twoMin: get('twoMin'), l1: get('l1'), l2: get('l2'), l2b: get('l2b'), l3: get('l3'), l3b: get('l3b'),
