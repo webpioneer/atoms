@@ -1623,7 +1623,7 @@ document.addEventListener('change', e => {
    IndexedDB; everything is bundled into export/import.
    ========================================================= */
 
-const LOG_TYPES = ['', 'note', 'reading', 'writing', 'workout', 'photo'];
+const LOG_TYPES = ['', 'note', 'reading', 'writing', 'workout', 'leetcode', 'photo'];
 
 /* ---- IndexedDB photo store ---- */
 const DB_NAME = 'atoms-media', PHOTO_STORE = 'photos';
@@ -1723,6 +1723,13 @@ function captureDraft() {
     document.querySelectorAll('#modal .exercise .setrow').forEach(row => { const w = row.querySelector('.w'), r = row.querySelector('.r'); sets.push({ ex: w.dataset.ex, weight: w.value, reps: r.value }); });
     d.sets = sets;
   }
+  if (document.querySelector('#modal .problem')) {
+    d.problems = [...document.querySelectorAll('#modal .problem')].map(row => ({
+      title: row.querySelector('.p-title').value, difficulty: row.querySelector('.p-diff').value,
+      topic: row.querySelector('.p-topic').value, status: row.querySelector('.p-status').value,
+      note: row.querySelector('.p-note').value,
+    }));
+  }
 }
 function renderEntry() {
   const h = habitById(editing.hid);
@@ -1775,6 +1782,26 @@ function renderEntry() {
       ${ramp}
       <div class="exercises">${exs.length ? rows : `<p class="muted small">${esc(t('noProgram'))}</p>`}</div>
       <label class="field"><span>${esc(t('fNotes'))}</span><textarea id="e-note" class="short" placeholder="${esc(t('fWorkoutNotePh'))}">${esc(gv('e-note', ex.note || ''))}</textarea></label>`;
+  } else if (h.logType === 'leetcode') {
+    const probs = dr.problems ? dr.problems : (ex.problems && ex.problems.length ? ex.problems : [{ title:'', difficulty:'med', topic:'', status:'solved', note:'' }]);
+    const rows = probs.map((pr, i) => `
+      <div class="problem" data-i="${i}">
+        <div class="p-row1">
+          <input class="p-title" value="${esc(pr.title || '')}" placeholder="${esc(t('pTitlePh'))}">
+          <select class="p-diff" aria-label="${esc(t('difficulty'))}">${['easy','med','hard'].map(dd => `<option value="${dd}" ${pr.difficulty===dd?'selected':''}>${esc(t('diff_'+dd))}</option>`).join('')}</select>
+          <button class="p-x" data-action="leet-del" data-i="${i}" aria-label="${esc(t('remove'))}">×</button>
+        </div>
+        <div class="p-row2">
+          <input class="p-topic" value="${esc(pr.topic || '')}" placeholder="${esc(t('pTopicPh'))}" list="topic-list">
+          <select class="p-status" aria-label="${esc(t('status'))}">${['solved','review','stuck'].map(st => `<option value="${st}" ${pr.status===st?'selected':''}>${esc(t('st_'+st))}</option>`).join('')}</select>
+        </div>
+        <input class="p-note" value="${esc(pr.note || '')}" placeholder="${esc(t('pNotePh'))}">
+      </div>`).join('');
+    body = `
+      <div class="problems">${rows}</div>
+      <button class="btn sm" type="button" data-action="leet-add" style="margin-top:8px">${I.plus} ${esc(t('addProblem'))}</button>
+      <datalist id="topic-list">${['Arrays','Hashing','Two pointers','Sliding window','Stack','Binary search','Linked list','Trees','Graphs','DP','Greedy','Backtracking','Heap','Intervals','Bit manipulation','Math'].map(x=>`<option value="${x}">`).join('')}</datalist>
+      <label class="field"><span>${esc(t('fNotes'))}</span><textarea id="e-note" class="short" placeholder="${esc(t('fLeetNotePh'))}">${esc(gv('e-note', ex.note || ''))}</textarea></label>`;
   } else if (h.logType === 'photo') {
     body = `<p class="muted small" style="margin-top:0">${esc(t('photoLogHint'))}</p>
       <label class="field"><span>${esc(t('fNotes'))}</span><textarea id="e-note" class="short" placeholder="${esc(t('fPhotoNotePh'))}">${esc(gv('e-note', ex.note || ''))}</textarea></label>`;
@@ -1833,6 +1860,14 @@ function gatherEntry() {
       });
     });
     e.sets = sets;
+  } else if (h.logType === 'leetcode') {
+    const probs = [];
+    document.querySelectorAll('#modal .problem').forEach(row => {
+      const title = row.querySelector('.p-title').value.trim();
+      if (!title) return;
+      probs.push({ title, difficulty: row.querySelector('.p-diff').value, topic: row.querySelector('.p-topic').value.trim(), status: row.querySelector('.p-status').value, note: row.querySelector('.p-note').value.trim() });
+    });
+    e.problems = probs;
   }
   return e;
 }
@@ -1843,6 +1878,9 @@ Object.assign(actions, {
   'entry-addphoto'() { $('#entry-file')?.click(); },
   async 'entry-delphoto'(el) { captureDraft(); const pid = el.dataset.pid; editing.photos = editing.photos.filter(x => x !== pid); await photoDel(pid); renderEntry(); },
   'entry-session'(el) { captureDraft(); if (editing.draft) delete editing.draft.sets; editing.session = el.dataset.s; renderEntry(); },
+  'leet-add'() { captureDraft(); editing.draft = editing.draft || {}; editing.draft.problems = editing.draft.problems || []; editing.draft.problems.push({ title:'', difficulty:'med', topic:'', status:'solved', note:'' }); renderEntry(); },
+  'leet-del'(el) { captureDraft(); const i = +el.dataset.i; editing.draft = editing.draft || {}; editing.draft.problems = editing.draft.problems || []; editing.draft.problems.splice(i, 1); if (!editing.draft.problems.length) editing.draft.problems.push({ title:'', difficulty:'med', topic:'', status:'solved', note:'' }); renderEntry(); },
+  'leet-resolve'(el) { const e = getEntry(el.dataset.hid, el.dataset.k); const i = +el.dataset.i; if (e?.problems?.[i]) { e.problems[i].status = 'solved'; save(); toast(t('logSaved')); rerender(); } },
   'entry-save'() {
     const e = gatherEntry();
     setEntry(editing.hid, editing.dateKey, e);
@@ -1880,6 +1918,11 @@ function entryLine(h, k, e) {
     const lines = Object.entries(byEx).map(([ex, ss]) => `<div class="small"><b>${esc(ex)}</b> — ${ss.map(s => `${esc(s.weight || '?')}${t('kg')}×${esc(s.reps || '?')}`).join(', ')}</div>`).join('');
     return `<div class="logrow">${date}<div><b>${esc(t('sess_' + (e.session || 'push')))}</b>${e.sets?.length ? '' : ` · ${esc(t('rest'))}`}${lines}${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ''}${photoThumbs(e.photos)}</div></div>`;
   }
+  if (h.logType === 'leetcode') {
+    const ps = e.problems || [];
+    const b = ps.map(pr => `<div class="small"><b>${esc(pr.title)}</b> <span class="chip diff-${esc(pr.difficulty)}">${esc(t('diff_' + pr.difficulty))}</span>${pr.topic ? ` · ${esc(pr.topic)}` : ''} <span class="muted">${esc(t('st_' + pr.status))}</span>${pr.note ? `<div class="muted">${esc(pr.note)}</div>` : ''}</div>`).join('');
+    return `<div class="logrow">${date}<div>${ps.length ? b : `<span class="muted small">${esc(t('rest'))}</span>`}${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ''}${photoThumbs(e.photos)}</div></div>`;
+  }
   return `<div class="logrow">${date}<div>${e.note ? `<div>${esc(e.note)}</div>` : ''}${photoThumbs(e.photos)}</div></div>`;
 }
 function logSection(h) {
@@ -1889,6 +1932,18 @@ function logSection(h) {
     const all = rows.flatMap(({ k, e }) => (e.photos || []).map(id => ({ id, k })));
     return `<h2>${esc(t('gallery'))}</h2><div class="card">${all.length
       ? `<div class="gallery">${all.map(p => `<figure><img data-photo="${p.id}" alt="" loading="lazy"><figcaption>${esc(fmtShort(parseKey(p.k)))}</figcaption></figure>`).join('')}</div>`
+      : `<p class="muted small" style="margin:0">${esc(t('noLogs'))}</p>`}</div>`;
+  }
+  if (h.logType === 'leetcode') {
+    const seen = {};
+    for (const { k, e } of rows) (e.problems || []).forEach((pr, i) => { if (!pr.title) return; const key = pr.title.toLowerCase(); if (!seen[key]) seen[key] = { k, i, pr }; });
+    const revisit = Object.values(seen).filter(x => x.pr.status === 'review' || x.pr.status === 'stuck');
+    const solvedCount = Object.values(seen).filter(x => x.pr.status === 'solved').length;
+    const queue = revisit.length ? `<h2>${esc(t('toRevisit'))} · ${revisit.length}</h2><div class="card">${revisit.map(x => `
+      <div class="logrow"><div style="flex:1"><b>${esc(x.pr.title)}</b> <span class="chip diff-${esc(x.pr.difficulty)}">${esc(t('diff_' + x.pr.difficulty))}</span>${x.pr.topic ? ` · <span class="small muted">${esc(x.pr.topic)}</span>` : ''} <span class="chip ${x.pr.status === 'stuck' ? 'warn' : ''}">${esc(t('st_' + x.pr.status))}</span>${x.pr.note ? `<div class="small muted">${esc(x.pr.note)}</div>` : ''}</div>
+      <button class="btn sm" data-action="leet-resolve" data-hid="${h.id}" data-k="${x.k}" data-i="${x.i}">${esc(t('markSolved'))}</button></div>`).join('')}</div>` : '';
+    return `${queue}<h2>${esc(t('logbook'))} · ${solvedCount} ${esc(t('solvedUnit'))}</h2><div class="card">${rows.length
+      ? rows.slice(0, 40).map(({ k, e }) => entryLine(h, k, e)).join('')
       : `<p class="muted small" style="margin:0">${esc(t('noLogs'))}</p>`}</div>`;
   }
   return `<h2>${esc(t('logbook'))}</h2><div class="card">${rows.length

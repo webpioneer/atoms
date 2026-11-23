@@ -471,3 +471,19 @@ h2.sec { margin: 4px 0 10px; font-size: 13px; font-family: var(--sans); text-tra
 .setrow .setn { width: 20px; color: var(--muted); font-size: 13px; text-align: center; }
 .setrow input { flex: 1; min-width: 0; text-align: center; min-height: 40px; }
 .setrow em { font-style: normal; color: var(--muted); }
+
+/* LeetCode log */
+.problem { padding: 10px 0; border-top: 1px solid var(--line); }
+.problem:first-child { border-top: 0; padding-top: 0; }
+.p-row1 { display: flex; gap: 8px; align-items: center; }
+.p-row1 .p-title { flex: 1; min-width: 0; }
+.p-row1 .p-diff { width: 96px; flex: none; }
+.p-x { width: 32px; height: 32px; flex: none; border: 0; background: none; color: var(--muted); font-size: 20px; }
+.p-row2 { display: flex; gap: 8px; margin-top: 6px; }
+.p-row2 .p-topic { flex: 1; min-width: 0; }
+.p-row2 .p-status { width: 110px; flex: none; }
+.problem .p-note { margin-top: 6px; }
+.chip.diff-easy { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.chip.diff-med { background: #fbe7d2; color: #9a6111; border-color: transparent; }
+.chip.diff-hard { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+@media (prefers-color-scheme: dark) { .chip.diff-med { background: #3a2e18; color: #e0a94b; } }
