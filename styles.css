@@ -438,3 +438,36 @@ h2.sec { margin: 4px 0 10px; font-size: 13px; font-family: var(--sans); text-tra
 .habit-list + h2.sec { margin-top: 22px; }
 
 .ai-note { margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--accent-soft); color: var(--ink); }
+
+/* ---------- Logbook ---------- */
+.play.logbtn { border-color: var(--c); color: var(--c); }
+.play.logbtn svg { width: 17px; height: 17px; margin: 0; }
+.logsheet { max-height: 92vh; overflow-y: auto; text-align: left; }
+.log-body .field { margin-top: 12px; }
+.photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.photos .ph { position: relative; width: 76px; height: 76px; }
+.photos .ph img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; background: var(--line); }
+.photos .ph-x { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--ink); color: var(--paper); font-size: 15px; line-height: 1; }
+.ph-add { width: 76px; height: 76px; border-radius: 10px; border: 1.5px dashed var(--line); background: var(--paper); display: grid; place-items: center; gap: 2px; color: var(--muted); font-size: 11px; }
+.ph-add svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.ph-add span { display: block; }
+.thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; background: var(--line); }
+.gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.gallery figure { margin: 0; }
+.gallery img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 10px; background: var(--line); }
+.gallery figcaption { font-size: 11px; color: var(--muted); text-align: center; margin-top: 3px; }
+.logrow { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.logrow:first-child { border-top: 0; padding-top: 0; }
+.logrow > .small, .logrow > .muted { flex: none; width: 48px; padding-top: 2px; }
+.logrow > div:last-child { flex: 1; min-width: 0; }
+.seg-pick { display: flex; gap: 6px; margin-bottom: 10px; }
+.pill { flex: 1; padding: 9px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); font-weight: 600; color: var(--muted); }
+.pill.on { background: var(--c); border-color: var(--c); color: #fff; }
+.exercise { padding: 10px 0; border-top: 1px solid var(--line); }
+.exercise:first-child { border-top: 0; }
+.ex-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.setrow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.setrow .setn { width: 20px; color: var(--muted); font-size: 13px; text-align: center; }
+.setrow input { flex: 1; min-width: 0; text-align: center; min-height: 40px; }
+.setrow em { font-style: normal; color: var(--muted); }

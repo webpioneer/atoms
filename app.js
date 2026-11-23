@@ -29,6 +29,8 @@ const I = {
   sparkle: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5L8 5.5z"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+  camera: '<svg viewBox="0 0 24 24"><path d="M3 8h3l2-2h8l2 2h3v12H3z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  log: '<svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 10h8M8 14h8M8 18h5"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>',
   moon: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
   pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
@@ -50,6 +52,7 @@ const defaultState = () => ({
   settings: {},
   coach: [],      // [{ role: 'user'|'assistant', content }]
   prayerLog: {},  // { 'YYYY-MM-DD': { fajr: true, … } }
+  entries: {},    // { habitId: { 'YYYY-MM-DD': { note, link, fields, sets, photos } } }
 });
 
 function load() {
@@ -226,6 +229,7 @@ function render() {
 
   if (ui.lastRoute !== hash) { window.scrollTo(0, 0); ui.lastRoute = hash; }
   autosize();
+  hydratePhotos();
 }
 window.addEventListener('hashchange', render);
 
@@ -331,7 +335,9 @@ function habitRow(h, d, canWarn) {
   else if (h.twoMin) chips.push(`<span class="chip">${esc(t('twoMinChip', h.twoMin))}</span>`);
   if (canWarn && !done && missedPrevious(h, d)) chips.push(`<span class="chip warn">${esc(t('neverMissTwice'))}</span>`);
   const meta = isBreak ? (h.identity ? t('iAmX', h.identity) : t('markResisted')) : cueLine(h);
-  const canTime = !isBreak && h.duration && !done && dkey(d) === dkey(today());
+  const canTime = !isBreak && h.duration && !h.logType && !done && dkey(d) === dkey(today());
+  const canLog = !isBreak && h.logType && dkey(d) === dkey(today());
+  if (h.logType && hasLog(h.id) && !chips.some(c => c.includes('break'))) { /* entries indicator handled in meta */ }
   return `
     <li class="habit ${done ? 'is-done' : ''}" style="--c:${esc(h.color)}" data-hid="${h.id}">
       <button class="check" data-action="toggle" data-id="${h.id}" data-date="${dkey(d)}"
@@ -341,6 +347,7 @@ function habitRow(h, d, canWarn) {
         ${meta ? `<span class="habit-meta">${esc(meta)}</span>` : ''}
         ${chips.length ? `<span class="chips">${chips.join('')}</span>` : ''}
       </a>
+      ${canLog ? `<button class="play logbtn" data-action="log-open" data-id="${h.id}" data-date="${dkey(d)}" aria-label="${esc(t('logToday', h.name))}">${I.log}</button>` : ''}
       ${canTime ? `<button class="play" data-action="timer-open" data-id="${h.id}" aria-label="${esc(t('startTimer', h.name))}">${I.play}</button>` : ''}
       <span class="streak ${s >= 3 ? 'hot' : ''}" title="${esc(t('streakTitle'))}">${I.flame}${s}</span>
     </li>`;
@@ -440,6 +447,15 @@ ${h ? '' : `
       ${law(4, 'law4k', f('l4b', 'accountLabel', 'accountPh'), 'only-break')}
 
       <fieldset class="law">
+        <legend><span class="law-title">${esc(t('trackingLabel'))}</span></legend>
+        <p class="hint">${esc(t('logTypeHint'))}</p>
+        <label class="field"><span>${esc(t('logTypeField'))}</span>
+          <select name="logType">
+            ${LOG_TYPES.map(lt => `<option value="${lt}" ${(v.logType||'')===lt?'selected':''}>${esc(t('log_'+(lt||'none')))}</option>`).join('')}
+          </select></label>
+      </fieldset>
+
+      <fieldset class="law">
         <legend><span class="law-title">${esc(t('scheduleColor'))}</span></legend>
         <div class="days" role="group" aria-label="${esc(t('days'))}">
           ${[0, 1, 2, 3, 4, 5, 6].map(i => { const n = dayShort(i); return `<input type="checkbox" id="d${i}" name="days" value="${i}" ${v.days.includes(i) ? 'checked' : ''}><label for="d${i}">${esc(n[0])}<span class="sr">${esc(n.slice(1))}</span></label>`; }).join('')}
@@ -512,6 +528,8 @@ function viewHabitDetail(id) {
       </div>
       <p class="small muted" style="margin-top:8px">${esc(t('tapToFix'))}</p>
     </div>
+
+    ${logSection(h)}
 
     <h2>${esc(t('fourLaws'))}</h2>
     <div class="laws-grid">
@@ -872,8 +890,10 @@ const actions = {
     state.scorecard = state.scorecard.filter(s => s.id !== el.dataset.id);
     save(); rerender();
   },
-  export() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  async export() {
+    const photos = {};
+    for (const id of collectPhotoIds()) { const b = await photoGet(id); if (b) photos[id] = await blobToDataURL(b); }
+    const blob = new Blob([JSON.stringify({ ...state, photos }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `atoms-backup-${dkey(today())}.json`;
@@ -937,6 +957,7 @@ const forms = {
     Object.assign(h, {
       type: get('type') || 'build', name: get('name'),
       identity: get('identity').replace(/^(i am|je suis)\s+/i, ''),
+      logType: LOG_TYPES.includes(get('logType')) ? get('logType') : '',
       afterPrayer: PRAYERS.includes(get('afterPrayer')) ? get('afterPrayer') : '',
       time: PRAYERS.includes(get('afterPrayer')) ? '' : get('time'),
       duration: Math.min(720, Math.max(0, parseInt(get('duration'), 10) || 0)) || null,
@@ -981,11 +1002,14 @@ document.addEventListener('submit', e => {
 
 function importFile(file) {
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
     try {
       const data = JSON.parse(r.result);
       if (!data || !Array.isArray(data.habits) || typeof data.log !== 'object') throw new Error('bad');
       if (!confirm(t('importConfirm', data.habits.length))) return;
+      const photos = data.photos || {};
+      delete data.photos;
+      for (const id in photos) { try { await photoPut(id, dataURLtoBlob(photos[id])); } catch (_) {} }
       state = { ...defaultState(), ...data, settings: { ...(data.settings || {}) } };
       save(); applyLangChrome(); toast(t('restoredBackup')); location.hash = '#/today'; render();
     } catch (_) { toast(t('invalidBackup')); }
@@ -1592,6 +1616,285 @@ document.addEventListener('change', e => {
   if (key === 'adj') { (c.adj ||= {})[el.dataset.p] = Math.max(-30, Math.min(30, parseInt(el.value, 10) || 0)); }
   save(); rerender();
 });
+
+/* =========================================================
+   Logbook — per-day entries with photos, structured fields,
+   links, and workout sets. Photos are stored on-device in
+   IndexedDB; everything is bundled into export/import.
+   ========================================================= */
+
+const LOG_TYPES = ['', 'note', 'reading', 'writing', 'workout', 'photo'];
+
+/* ---- IndexedDB photo store ---- */
+const DB_NAME = 'atoms-media', PHOTO_STORE = 'photos';
+let _dbP;
+function idb() {
+  return _dbP || (_dbP = new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(PHOTO_STORE)) r.result.createObjectStore(PHOTO_STORE); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  }));
+}
+async function photoPut(id, blob) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction(PHOTO_STORE, 'readwrite'); tx.objectStore(PHOTO_STORE).put(blob, id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+async function photoGet(id) { const db = await idb(); return new Promise((res) => { const tx = db.transaction(PHOTO_STORE, 'readonly'); const rq = tx.objectStore(PHOTO_STORE).get(id); rq.onsuccess = () => res(rq.result || null); rq.onerror = () => res(null); }); }
+async function photoDel(id) { const db = await idb(); return new Promise((res) => { const tx = db.transaction(PHOTO_STORE, 'readwrite'); tx.objectStore(PHOTO_STORE).delete(id); tx.oncomplete = () => res(); tx.onerror = () => res(); }); }
+
+/* ---- Image capture → resized JPEG blob ---- */
+function resizeImage(file, max = 1400, quality = 0.82) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      c.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('load')); };
+    img.src = url;
+  });
+}
+
+/* ---- Display: hydrate <img data-photo="id"> from IndexedDB ---- */
+const _photoURLs = new Map();
+async function hydratePhotos() {
+  for (const el of document.querySelectorAll('img[data-photo]')) {
+    const id = el.dataset.photo;
+    if (el.dataset.loaded) continue;
+    el.dataset.loaded = '1';
+    if (_photoURLs.has(id)) { el.src = _photoURLs.get(id); continue; }
+    const blob = await photoGet(id);
+    if (blob) { const u = URL.createObjectURL(blob); _photoURLs.set(id, u); el.src = u; }
+  }
+}
+const blobToDataURL = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
+function dataURLtoBlob(d) { const [m, b64] = d.split(','); const mime = (m.match(/:(.*?);/) || [])[1] || 'image/jpeg'; const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type: mime }); }
+
+/* ---- Entry model ---- */
+const getEntry = (hid, k) => state.entries?.[hid]?.[k] || null;
+function setEntry(hid, k, entry) { state.entries ||= {}; (state.entries[hid] ||= {})[k] = entry; save(); }
+function collectPhotoIds() { const ids = []; for (const hid in (state.entries || {})) for (const k in state.entries[hid]) (state.entries[hid][k].photos || []).forEach(id => ids.push(id)); return ids; }
+function hasLog(hid) { const m = state.entries?.[hid]; return m && Object.keys(m).length; }
+function entriesFor(hid) { const m = state.entries?.[hid] || {}; return Object.keys(m).sort().reverse().map(k => ({ k, e: m[k] })); }
+
+/* ---- Workout: read last weights for an exercise ---- */
+function lastWeight(hid, exName, beforeKey) {
+  const m = state.entries?.[hid] || {};
+  for (const k of Object.keys(m).sort().reverse()) {
+    if (beforeKey && k >= beforeKey) continue;
+    const sets = (m[k].sets || []).filter(s => s.ex === exName && s.weight);
+    if (sets.length) return sets[sets.length - 1].weight;
+  }
+  return '';
+}
+const sessionForDate = (h, d) => (h.program?.dayMap?.[d.getDay()]) || 'push';
+
+/* =========================================================
+   Entry editor (bottom sheet)
+   ========================================================= */
+let editing = null; // { hid, dateKey, photos:[], session }
+
+function openEntry(hid, dateKey) {
+  const h = habitById(hid);
+  if (!h) return;
+  const ex = getEntry(hid, dateKey) || {};
+  editing = { hid, dateKey, photos: [...(ex.photos || [])], session: ex.session || (h.logType === 'workout' ? sessionForDate(h, parseKey(dateKey)) : ''), draft: null };
+  renderEntry();
+}
+function closeEntry() { editing = null; const r = $('#modal'); r.hidden = true; r.innerHTML = ''; }
+
+function photoStrip() {
+  return `<div class="photos">
+    ${editing.photos.map(id => `<div class="ph"><img data-photo="${id}" alt=""><button class="ph-x" data-action="entry-delphoto" data-pid="${id}" aria-label="${esc(t('remove'))}">×</button></div>`).join('')}
+    <button class="ph-add" data-action="entry-addphoto" aria-label="${esc(t('addPhoto'))}">${I.camera}<span>${esc(t('addPhoto'))}</span></button>
+  </div>
+  <input type="file" accept="image/*" capture="environment" id="entry-file" hidden>`;
+}
+
+function captureDraft() {
+  if (!editing) return;
+  const d = editing.draft || (editing.draft = {});
+  ['e-book', 'e-page', 'e-language', 'e-note', 'e-link', 'e-title', 'e-words'].forEach(id => { const el = document.getElementById(id); if (el) d[id] = el.value; });
+  if (document.querySelector('#modal .exercise')) {
+    const sets = [];
+    document.querySelectorAll('#modal .exercise .setrow').forEach(row => { const w = row.querySelector('.w'), r = row.querySelector('.r'); sets.push({ ex: w.dataset.ex, weight: w.value, reps: r.value }); });
+    d.sets = sets;
+  }
+}
+function renderEntry() {
+  const h = habitById(editing.hid);
+  const ex = getEntry(editing.hid, editing.dateKey) || {};
+  const f = ex.fields || {};
+  const dr = editing.draft || {};
+  const gv = (id, fb) => (id in dr ? dr[id] : fb);
+  const d = parseKey(editing.dateKey);
+  let body = '';
+
+  if (h.logType === 'reading') {
+    body = `
+      <label class="field"><span>${esc(t('fBook'))}</span><input type="text" id="e-book" value="${esc(gv('e-book', f.book || ''))}" placeholder="${esc(t('fBookPh'))}"></label>
+      <div class="two">
+        <label class="field"><span>${esc(t('fPage'))}</span><input type="text" inputmode="numeric" id="e-page" value="${esc(gv('e-page', f.page || ''))}" placeholder="e.g. 42"></label>
+        <label class="field"><span>${esc(t('fLanguage'))}</span><input type="text" id="e-language" value="${esc(gv('e-language', f.language || ''))}" placeholder="${esc(t('fLanguagePh'))}" list="lang-list">
+          <datalist id="lang-list"><option value="English"><option value="Français"><option value="العربية"></datalist></label>
+      </div>
+      <label class="field"><span>${esc(t('fNotes'))}</span><textarea id="e-note" class="short" placeholder="${esc(t('fReadNotePh'))}">${esc(gv('e-note', ex.note || ''))}</textarea></label>`;
+  } else if (h.logType === 'writing') {
+    body = `
+      <label class="field"><span>${esc(t('fLink'))}</span><input type="url" id="e-link" value="${esc(gv('e-link', ex.link || ''))}" placeholder="https://…"></label>
+      <label class="field"><span>${esc(t('fWhat'))}</span><input type="text" id="e-title" value="${esc(gv('e-title', f.title || ''))}" placeholder="${esc(t('fWhatPh'))}"></label>
+      <label class="field"><span>${esc(t('fWords'))}</span><input type="text" inputmode="numeric" id="e-words" value="${esc(gv('e-words', f.words || ''))}" placeholder="e.g. 500"></label>
+      <label class="field"><span>${esc(t('fNotes'))}</span><textarea id="e-note" class="short" placeholder="${esc(t('fWriteNotePh'))}">${esc(gv('e-note', ex.note || ''))}</textarea></label>`;
+  } else if (h.logType === 'workout') {
+    const sess = editing.session;
+    const exs = (h.program?.sessions?.[sess]) || [];
+    const prevSets = (editing.draft && editing.draft.sets) ? editing.draft.sets : (ex.sets || []);
+    const rows = exs.map((pe, i) => {
+      const done = prevSets.filter(s => s.ex === pe.name);
+      const n = Math.max(pe.sets || 3, done.length);
+      const last = lastWeight(editing.hid, pe.name, editing.dateKey);
+      let setRows = '';
+      for (let si = 0; si < n; si++) {
+        const s = done[si] || {};
+        setRows += `<div class="setrow">
+          <span class="setn">${si + 1}</span>
+          <input type="text" inputmode="decimal" class="w" data-ex="${esc(pe.name)}" value="${esc(s.weight || '')}" placeholder="${last ? esc(last) : t('kg')}" aria-label="${esc(t('weight'))}">
+          <em>×</em>
+          <input type="text" inputmode="numeric" class="r" data-ex="${esc(pe.name)}" value="${esc(s.reps || '')}" placeholder="${esc(pe.reps || '')}" aria-label="${esc(t('reps'))}">
+        </div>`;
+      }
+      return `<div class="exercise"><div class="ex-head"><b>${esc(pe.name)}</b><span class="muted small">${esc(pe.sets)}×${esc(pe.reps)}${last ? ` · ${t('last')} ${esc(last)}` : ''}</span></div>${setRows}</div>`;
+    }).join('');
+    const ramp = h.program?.rampWeeks && daysBetween(parseKey(h.createdAt), d) < h.program.rampWeeks * 7
+      ? `<p class="ai-note small">${esc(t('rampNote'))}</p>` : '';
+    body = `
+      <div class="seg-pick">${['push','pull','legs'].map(sv => `<button class="pill ${sess===sv?'on':''}" data-action="entry-session" data-s="${sv}">${esc(t('sess_'+sv))}</button>`).join('')}</div>
+      ${ramp}
+      <div class="exercises">${exs.length ? rows : `<p class="muted small">${esc(t('noProgram'))}</p>`}</div>
+      <label class="field"><span>${esc(t('fNotes'))}</span><textarea id="e-note" class="short" placeholder="${esc(t('fWorkoutNotePh'))}">${esc(gv('e-note', ex.note || ''))}</textarea></label>`;
+  } else if (h.logType === 'photo') {
+    body = `<p class="muted small" style="margin-top:0">${esc(t('photoLogHint'))}</p>
+      <label class="field"><span>${esc(t('fNotes'))}</span><textarea id="e-note" class="short" placeholder="${esc(t('fPhotoNotePh'))}">${esc(gv('e-note', ex.note || ''))}</textarea></label>`;
+  } else {
+    body = `<label class="field"><span>${esc(t('fNotes'))}</span><textarea id="e-note" class="short" placeholder="${esc(t('fNotePh'))}">${esc(gv('e-note', ex.note || ''))}</textarea></label>`;
+  }
+
+  const r = $('#modal');
+  r.hidden = false;
+  r.innerHTML = `
+    <div class="sheet logsheet" role="dialog" aria-modal="true" aria-label="${esc(h.name)}" style="--c:${esc(h.color)}">
+      <button class="del sheet-close" data-action="entry-close" aria-label="${esc(t('close'))}">×</button>
+      <div class="eyebrow">${esc(fmtLong(d))}</div>
+      <h2 style="margin:2px 0 14px">${esc(h.name)}</h2>
+      <div class="log-body">
+        ${body}
+        <div class="field"><span>${esc(t('photos'))}</span>${photoStrip()}</div>
+      </div>
+      <div class="form-actions" style="margin-top:16px">
+        ${getEntry(editing.hid, editing.dateKey) ? `<button class="btn" data-action="entry-del">${I.trash}</button>` : ''}
+        <button class="btn primary" data-action="entry-save" style="flex:1">${I.check} ${esc(t('saveLog'))}</button>
+      </div>
+    </div>`;
+  hydratePhotos();
+  const f2 = $('#entry-file'); if (f2) f2.onchange = onEntryFile;
+  document.querySelectorAll('#modal textarea').forEach(fit);
+}
+
+async function onEntryFile(e) {
+  const file = e.target.files[0];
+  if (!file || !editing) return;
+  try {
+    const blob = await resizeImage(file);
+    const id = 'ph_' + uid();
+    captureDraft();
+    await photoPut(id, blob);
+    editing.photos.push(id);
+    renderEntry();
+  } catch (_) { toast(t('photoFailed')); }
+}
+
+function gatherEntry() {
+  const h = habitById(editing.hid);
+  const val = id => ($('#' + id)?.value || '').trim();
+  const e = { photos: [...editing.photos] };
+  const note = val('e-note'); if (note) e.note = note;
+  if (h.logType === 'reading') { e.fields = { book: val('e-book'), page: val('e-page'), language: val('e-language') }; }
+  else if (h.logType === 'writing') { if (val('e-link')) e.link = val('e-link'); e.fields = { title: val('e-title'), words: val('e-words') }; }
+  else if (h.logType === 'workout') {
+    e.session = editing.session;
+    const sets = [];
+    document.querySelectorAll('#modal .exercise').forEach(ex => {
+      ex.querySelectorAll('.setrow').forEach(row => {
+        const w = row.querySelector('.w'), r = row.querySelector('.r');
+        if ((w.value || '').trim() || (r.value || '').trim()) sets.push({ ex: w.dataset.ex, weight: w.value.trim(), reps: r.value.trim() });
+      });
+    });
+    e.sets = sets;
+  }
+  return e;
+}
+
+Object.assign(actions, {
+  'log-open'(el) { openEntry(el.dataset.id, el.dataset.date); },
+  'entry-close'() { closeEntry(); },
+  'entry-addphoto'() { $('#entry-file')?.click(); },
+  async 'entry-delphoto'(el) { captureDraft(); const pid = el.dataset.pid; editing.photos = editing.photos.filter(x => x !== pid); await photoDel(pid); renderEntry(); },
+  'entry-session'(el) { captureDraft(); if (editing.draft) delete editing.draft.sets; editing.session = el.dataset.s; renderEntry(); },
+  'entry-save'() {
+    const e = gatherEntry();
+    setEntry(editing.hid, editing.dateKey, e);
+    const h = habitById(editing.hid);
+    if (!isDone(h, parseKey(editing.dateKey))) setDone(h, parseKey(editing.dateKey), true);
+    navigator.vibrate?.(12);
+    toast(t('logSaved'));
+    closeEntry(); rerender();
+  },
+  async 'entry-del'() {
+    const e = getEntry(editing.hid, editing.dateKey);
+    if (!confirm(t('delLogConfirm'))) return;
+    for (const pid of (e?.photos || [])) await photoDel(pid);
+    if (state.entries?.[editing.hid]) { delete state.entries[editing.hid][editing.dateKey]; save(); }
+    closeEntry(); rerender();
+  },
+});
+
+/* ---- Detail page: log history ---- */
+function photoThumbs(photos) {
+  if (!photos || !photos.length) return '';
+  return `<div class="thumbs">${photos.map(id => `<img data-photo="${id}" alt="" loading="lazy">`).join('')}</div>`;
+}
+function entryLine(h, k, e) {
+  const d = parseKey(k);
+  const date = `<span class="muted small">${esc(fmtShort(d))}</span>`;
+  const f = e.fields || {};
+  if (h.logType === 'reading')
+    return `<div class="logrow">${date}<div>${f.book ? `<b>${esc(f.book)}</b>` : ''}${f.page ? ` · ${t('pageN', esc(f.page))}` : ''}${f.language ? ` <span class="chip">${esc(f.language)}</span>` : ''}${e.note ? `<div class="small">${esc(e.note)}</div>` : ''}${photoThumbs(e.photos)}</div></div>`;
+  if (h.logType === 'writing')
+    return `<div class="logrow">${date}<div>${f.title ? `<b>${esc(f.title)}</b>` : ''}${f.words ? ` · ${esc(f.words)} ${t('wordsUnit')}` : ''}${e.link ? `<div><a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.link.replace(/^https?:\/\//, '').slice(0, 40))}</a></div>` : ''}${e.note ? `<div class="small">${esc(e.note)}</div>` : ''}${photoThumbs(e.photos)}</div></div>`;
+  if (h.logType === 'workout') {
+    const byEx = {};
+    (e.sets || []).forEach(s => { (byEx[s.ex] ||= []).push(s); });
+    const lines = Object.entries(byEx).map(([ex, ss]) => `<div class="small"><b>${esc(ex)}</b> — ${ss.map(s => `${esc(s.weight || '?')}${t('kg')}×${esc(s.reps || '?')}`).join(', ')}</div>`).join('');
+    return `<div class="logrow">${date}<div><b>${esc(t('sess_' + (e.session || 'push')))}</b>${e.sets?.length ? '' : ` · ${esc(t('rest'))}`}${lines}${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ''}${photoThumbs(e.photos)}</div></div>`;
+  }
+  return `<div class="logrow">${date}<div>${e.note ? `<div>${esc(e.note)}</div>` : ''}${photoThumbs(e.photos)}</div></div>`;
+}
+function logSection(h) {
+  if (!h.logType) return '';
+  const rows = entriesFor(h.id);
+  if (h.logType === 'photo') {
+    const all = rows.flatMap(({ k, e }) => (e.photos || []).map(id => ({ id, k })));
+    return `<h2>${esc(t('gallery'))}</h2><div class="card">${all.length
+      ? `<div class="gallery">${all.map(p => `<figure><img data-photo="${p.id}" alt="" loading="lazy"><figcaption>${esc(fmtShort(parseKey(p.k)))}</figcaption></figure>`).join('')}</div>`
+      : `<p class="muted small" style="margin:0">${esc(t('noLogs'))}</p>`}</div>`;
+  }
+  return `<h2>${esc(t('logbook'))}</h2><div class="card">${rows.length
+    ? rows.slice(0, 30).map(({ k, e }) => entryLine(h, k, e)).join('')
+    : `<p class="muted small" style="margin:0">${esc(t('noLogs'))}</p>`}</div>`;
+}
 
 /* ---------- UI utilities ---------- */
 let toastT;

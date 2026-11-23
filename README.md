@@ -42,6 +42,20 @@ Turn this on under **More → Prayer times**. The five daily prayers (Fajr, Dhuh
 - Your location refreshes automatically when you open the app (if location access is allowed) or change time zone, so the times follow you when you travel. You can also enter coordinates manually.
 - The calculation method defaults to the one for your time zone (e.g. France → UOIF 12°, Morocco → 19°/17°, Saudi Arabia → Umm al-Qura; Muslim World League otherwise). You can change it, choose the Hanafi Asr, and shift any prayer by ±30 minutes to match your mosque.
 
+## Logbook (workouts, reading, writing, progress photos)
+
+Any habit can log details each day, not just a check — set it under **Tracking** when creating/editing a habit, or tap the 📖 button on a habit on Today:
+
+- **Reading** — book, page, language, a note, and photos.
+- **Writing** — a link (to your doc/post), title, word count, note, photos.
+- **Workout** — pick the session (Push/Pull/Legs); it shows your program's exercises with target sets×reps and your last weights, and you log actual weight × reps per set.
+- **Progress photos** — a photo + note; the habit's page shows a scrollable photo timeline.
+- **Note** — a free note + photos on any habit.
+
+Photos are stored **on your device** (IndexedDB) and never uploaded. They're bundled into **Export backup** (and restored on import), so keep backups if the photos matter to you — clearing the browser's data for the site erases them.
+
+Workout programs live on the habit (`program`), so the session logger always shows the right exercises.
+
 ## On-device AI coach
 
 The **Coach** tab and the **Fill with AI** button (new-habit form) use a small language model that runs entirely in the browser through WebGPU, with [WebLLM](https://github.com/mlc-ai/web-llm) (bundled in `vendor/`, Apache-2.0) and **Qwen2.5 1.5B Instruct** (Apache-2.0).
