@@ -165,6 +165,14 @@ const STRINGS = {
     importConfirm: n => `Replace current data with this backup (${n} habit${n === 1 ? '' : 's'})?`,
     restoredBackup: 'Backup restored', invalidBackup: 'That file isn’t a valid backup',
     storageFull: 'Could not save — storage is full',
+    // Quantified + review
+    addUnit: u => `Add${u ? ' ' + u : ''}`, enterAmount: u => `Enter amount${u ? ' (' + u + ')' : ''}`,
+    goalCountLabel: 'Daily target', goalCountPh: 'e.g. 8', unitLabel: 'Unit', unitPh: 'glasses, g, steps…',
+    stepLabel: 'Tap adds', stepHint: 'How much each tap on the circle adds.',
+    weeklyReview: 'Weekly review', reviewSub: 'See the week and reflect', weekOf: x => `Week of ${x}`,
+    last7: 'Last 7 days', completedUnit: 'completed', votesLower: 'votes', votesThisWeek: 'Votes this week',
+    onFire: 'On fire', needsLove: 'Needs love', strongestDay: 'Strongest day', thisWeekHabits: 'This week',
+    noData: 'Nothing scheduled this week.', reviewReflect: 'Reflect', reviewReflectPh: 'What worked this week? What got in the way? One change for next week…',
 
     // Logbook
     trackingLabel: 'Tracking', logTypeField: 'What to log each time',
@@ -453,6 +461,13 @@ Reply in English with a JSON object. Keep every value short (under 12 words).
     importConfirm: n => `Remplacer les données actuelles par cette sauvegarde (${n} habitude${n > 1 ? 's' : ''}) ?`,
     restoredBackup: 'Sauvegarde restaurée', invalidBackup: 'Ce fichier n’est pas une sauvegarde valide',
     storageFull: 'Enregistrement impossible — stockage plein',
+    addUnit: u => `Ajouter${u ? ' ' + u : ''}`, enterAmount: u => `Saisir la quantité${u ? ' (' + u + ')' : ''}`,
+    goalCountLabel: 'Objectif du jour', goalCountPh: 'ex. 8', unitLabel: 'Unité', unitPh: 'verres, g, pas…',
+    stepLabel: 'Un appui ajoute', stepHint: 'Ce que chaque appui sur le cercle ajoute.',
+    weeklyReview: 'Bilan hebdo', reviewSub: 'Voir la semaine et réfléchir', weekOf: x => `Semaine du ${x}`,
+    last7: '7 derniers jours', completedUnit: 'faites', votesLower: 'votes', votesThisWeek: 'Votes cette semaine',
+    onFire: 'En feu', needsLove: 'À soigner', strongestDay: 'Meilleur jour', thisWeekHabits: 'Cette semaine',
+    noData: 'Rien de prévu cette semaine.', reviewReflect: 'Réflexion', reviewReflectPh: 'Qu’est-ce qui a marché cette semaine ? Qu’est-ce qui a gêné ? Un changement pour la semaine prochaine…',
 
     trackingLabel: 'Suivi', logTypeField: 'À enregistrer à chaque fois',
     logTypeHint: 'Au-delà d’une simple coche, note des détails chaque jour — séries, pages, liens ou photos.',

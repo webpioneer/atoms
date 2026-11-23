@@ -487,3 +487,13 @@ h2.sec { margin: 4px 0 10px; font-size: 13px; font-family: var(--sans); text-tra
 .chip.diff-med { background: #fbe7d2; color: #9a6111; border-color: transparent; }
 .chip.diff-hard { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
 @media (prefers-color-scheme: dark) { .chip.diff-med { background: #3a2e18; color: #e0a94b; } }
+
+/* Quantified (count) habits */
+.check.count { position: relative; border: 0; background: transparent; }
+.check.count .cring { width: 46px; height: 46px; transform: rotate(-90deg); }
+.check.count .cring circle { fill: none; stroke-width: 3.5; }
+.check.count .cring circle:first-child { stroke: var(--line); }
+.check.count .cring .cbar { stroke: var(--c); stroke-linecap: round; transition: stroke-dashoffset .3s ease; }
+.check.count .cnum { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 15px; color: var(--c); }
+.check.count.full .cnum svg { width: 22px; height: 22px; fill: none; stroke: var(--c); stroke-width: 3; }
+.countchip { cursor: pointer; font-weight: 600; color: var(--c); border-color: color-mix(in srgb, var(--c) 35%, transparent); background: color-mix(in srgb, var(--c) 8%, transparent); }

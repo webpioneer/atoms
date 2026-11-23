@@ -53,6 +53,7 @@ const defaultState = () => ({
   coach: [],      // [{ role: 'user'|'assistant', content }]
   prayerLog: {},  // { 'YYYY-MM-DD': { fajr: true, … } }
   entries: {},    // { habitId: { 'YYYY-MM-DD': { note, link, fields, sets, photos } } }
+  counts: {},     // { habitId: { 'YYYY-MM-DD': number } } for measured (count) habits
 });
 
 function load() {
@@ -120,6 +121,14 @@ const activeHabits = () => state.habits.filter(h => !h.archived);
 const existedOn = (h, d) => dkey(d) >= h.createdAt;
 const isScheduled = (h, d) => existedOn(h, d) && h.days.includes(d.getDay());
 const isDone = (h, d) => !!state.log[dkey(d)]?.[h.id];
+const isCount = h => h.goalCount > 0;
+const getCount = (h, d) => (state.counts?.[h.id]?.[dkey(d)]) || 0;
+function setCount(h, d, n) {
+  const k = dkey(d); n = Math.max(0, Math.round(n));
+  state.counts ||= {}; (state.counts[h.id] ||= {})[k] = n;
+  if (!n) delete state.counts[h.id][k];
+  setDone(h, d, n >= h.goalCount);  // reuse all streak/rate/ring logic
+}
 
 function setDone(h, d, val) {
   const k = dkey(d);
@@ -213,6 +222,7 @@ const routes = {
   laws: viewLaws,
   coach: viewCoach,
   prayers: viewPrayers,
+  review: viewReview,
 };
 
 function render() {
@@ -330,18 +340,24 @@ function habitRow(h, d, canWarn) {
   const done = isDone(h, d);
   const s = currentStreak(h);
   const isBreak = h.type === 'break';
+  const count = isCount(h) ? getCount(h, d) : 0;
   const chips = [];
   if (isBreak) chips.push(`<span class="chip break">${esc(t('breakingChip'))}</span>`);
   else if (h.twoMin) chips.push(`<span class="chip">${esc(t('twoMinChip', h.twoMin))}</span>`);
   if (canWarn && !done && missedPrevious(h, d)) chips.push(`<span class="chip warn">${esc(t('neverMissTwice'))}</span>`);
   const meta = isBreak ? (h.identity ? t('iAmX', h.identity) : t('markResisted')) : cueLine(h);
+  if (isCount(h)) chips.unshift(`<button class="chip countchip" data-action="count-set" data-id="${h.id}" data-date="${dkey(d)}">${count}/${h.goalCount}${h.unit ? ' ' + esc(h.unit) : ''}</button>`);
   const canTime = !isBreak && h.duration && !h.logType && !done && dkey(d) === dkey(today());
   const canLog = !isBreak && h.logType && dkey(d) === dkey(today());
   if (h.logType && hasLog(h.id) && !chips.some(c => c.includes('break'))) { /* entries indicator handled in meta */ }
   return `
     <li class="habit ${done ? 'is-done' : ''}" style="--c:${esc(h.color)}" data-hid="${h.id}">
-      <button class="check" data-action="toggle" data-id="${h.id}" data-date="${dkey(d)}"
-        aria-pressed="${done}" aria-label="${esc(t(isBreak ? 'resistedAria' : 'doneAria', h.name))}">${I.check}</button>
+      ${isCount(h)
+        ? `<button class="check count ${done ? 'full' : ''}" data-action="count-add" data-id="${h.id}" data-date="${dkey(d)}" aria-label="${esc(t('addUnit', h.unit || ''))}">
+             <svg viewBox="0 0 48 48" class="cring"><circle cx="24" cy="24" r="21"/><circle cx="24" cy="24" r="21" class="cbar" style="stroke-dasharray:${2*Math.PI*21};stroke-dashoffset:${2*Math.PI*21*(1-Math.min(1,count/h.goalCount))}"/></svg>
+             <span class="cnum">${done ? I.check : count}</span></button>`
+        : `<button class="check" data-action="toggle" data-id="${h.id}" data-date="${dkey(d)}"
+             aria-pressed="${done}" aria-label="${esc(t(isBreak ? 'resistedAria' : 'doneAria', h.name))}">${I.check}</button>`}
       <a class="habit-body" href="#/h/${h.id}">
         <span class="habit-name">${esc(h.name)}</span>
         ${meta ? `<span class="habit-meta">${esc(meta)}</span>` : ''}
@@ -453,6 +469,11 @@ ${h ? '' : `
           <select name="logType">
             ${LOG_TYPES.map(lt => `<option value="${lt}" ${(v.logType||'')===lt?'selected':''}>${esc(t('log_'+(lt||'none')))}</option>`).join('')}
           </select></label>
+        <div class="two">
+          <label class="field"><span>${esc(t('goalCountLabel'))}</span><input type="number" name="goalCount" min="1" max="100000" inputmode="numeric" value="${esc(v.goalCount || '')}" placeholder="${esc(t('goalCountPh'))}"></label>
+          <label class="field"><span>${esc(t('unitLabel'))}</span><input type="text" name="unit" value="${esc(v.unit || '')}" placeholder="${esc(t('unitPh'))}" list="unit-list"><datalist id="unit-list"><option value="glasses"><option value="g"><option value="steps"><option value="min"><option value="pages"><option value="reps"></datalist></label>
+        </div>
+        <label class="field"><span>${esc(t('stepLabel'))}</span><input type="number" name="step" min="1" max="10000" inputmode="numeric" value="${esc(v.step || '')}" placeholder="1"><small>${esc(t('stepHint'))}</small></label>
       </fieldset>
 
       <fieldset class="law">
@@ -613,7 +634,8 @@ function viewProgress() {
   }).join('');
 
   return `
-    <header class="page-head"><div><h1>${esc(t('progress'))}</h1><div class="sub">${esc(t('progressSub'))}</div></div></header>
+    <header class="page-head"><div><h1>${esc(t('progress'))}</h1><div class="sub">${esc(t('progressSub'))}</div></div>
+      <a class="btn sm" href="#/review">${esc(t('weeklyReview'))}</a></header>
 
     <div class="stats three">
       <div class="stat"><b>${allVotes}</b><span>${esc(t('totalVotes'))}</span></div>
@@ -753,6 +775,7 @@ function viewMore() {
     <h2>${esc(t('tools'))}</h2>
     <div class="card">
       <ul class="menu">
+        <li><a href="#/review"><span class="ico">${I.up}</span><span>${esc(t('weeklyReview'))}<small>${esc(t('reviewSub'))}</small></span></a></li>
         <li><a href="#/prayers"><span class="ico">${I.moon}</span><span>${esc(t('prayers'))}<small>${esc(t('prayersMenuSub'))}</small></span></a></li>
         <li><a href="#/scorecard"><span class="ico">${I.list}</span><span>${esc(t('scorecard'))}<small>${esc(t('scorecardSub'))}</small></span></a></li>
         <li><a href="#/laws"><span class="ico">${I.book}</span><span>${esc(t('lawsMenu'))}<small>${esc(t('lawsMenuSub'))}</small></span></a></li>
@@ -825,6 +848,74 @@ function viewLaws() {
   `;
 }
 
+function weekStartMon(d) { const x = new Date(d); const off = (x.getDay() + 6) % 7; x.setDate(x.getDate() - off); x.setHours(0,0,0,0); return x; }
+function viewReview() {
+  const td = today();
+  const act = activeHabits();
+  if (!act.length) return `<a class="back" href="#/progress">${I.left} ${esc(t('progress'))}</a><header class="page-head"><h1>${esc(t('weeklyReview'))}</h1></header><div class="card empty"><p>${esc(t('progressEmpty'))}</p></div>`;
+
+  let sched = 0, done = 0;
+  const per = act.map(h => {
+    let hs = 0, hd = 0;
+    for (let i = 0; i < 7; i++) { const d = addDays(td, -i); if (!isScheduled(h, d)) continue; if (i === 0 && !isDone(h, d)) continue; hs++; if (isDone(h, d)) hd++; }
+    sched += hs; done += hd;
+    return { h, hs, hd, rate: hs ? hd / hs : null, streak: currentStreak(h) };
+  });
+  const overall = sched ? done / sched : 0;
+  const C = 2 * Math.PI * 34;
+  const rated = per.filter(x => x.rate != null && x.hs >= 2).sort((a, b) => b.rate - a.rate);
+  const best = rated[0], worst = rated.length > 1 ? rated[rated.length - 1] : null;
+
+  const wd = Array.from({ length: 7 }, () => ({ s: 0, d: 0 }));
+  for (let i = 1; i <= 56; i++) { const d = addDays(td, -i); for (const h of act) { if (!isScheduled(h, d)) continue; wd[d.getDay()].s++; if (isDone(h, d)) wd[d.getDay()].d++; } }
+  const wdR = wd.map((x, i) => ({ i, r: x.s ? x.d / x.s : null, s: x.s })).filter(x => x.r != null && x.s >= 3).sort((a, b) => b.r - a.r);
+  const strong = wdR[0];
+
+  const votes = {};
+  for (let i = 0; i < 7; i++) { const d = addDays(td, -i); for (const h of act) if (isDone(h, d)) { const k = h.identity || ''; votes[k] = (votes[k] || 0) + 1; } }
+  const vRows = Object.entries(votes).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  const weekVotes = Object.values(votes).reduce((a, b) => a + b, 0);
+
+  const wk = weekStartMon(td);
+  const rkey = 'review:' + dkey(wk);
+  const perDone = per.filter(x => x.hd > 0 || x.hs > 0);
+
+  return `
+    <a class="back" href="#/progress">${I.left} ${esc(t('progress'))}</a>
+    <header class="page-head"><div><h1>${esc(t('weeklyReview'))}</h1><div class="sub">${esc(t('weekOf', fmtShort(wk)))}</div></div></header>
+
+    <div class="card" style="display:flex;align-items:center;gap:16px">
+      <div class="ring" style="width:84px;height:84px;flex:none">
+        <svg viewBox="0 0 84 84"><circle class="track" cx="42" cy="42" r="34"/><circle class="bar" cx="42" cy="42" r="34" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - overall)}"/></svg>
+        <div class="label" style="font-size:19px">${pct(overall)}</div>
+      </div>
+      <div><b style="font-family:var(--serif);font-size:19px">${esc(t('last7'))}</b>
+        <div class="muted small">${done}/${sched} ${esc(t('completedUnit'))} · ${weekVotes} ${esc(t('votesLower'))}</div></div>
+    </div>
+
+    ${best ? `<div class="stats" style="margin-top:12px">
+      <div class="stat"><b style="font-size:15px">${esc(best.h.name)}</b><span>${esc(t('onFire'))} ${pct(best.rate)}</span></div>
+      ${worst ? `<div class="stat"><b style="font-size:15px">${esc(worst.h.name)}</b><span>${esc(t('needsLove'))} ${pct(worst.rate)}</span></div>` : ''}
+      ${strong ? `<div class="stat"><b style="font-size:15px">${esc(dayShort(strong.i))}</b><span>${esc(t('strongestDay'))}</span></div>` : ''}
+    </div>` : ''}
+
+    <h2>${esc(t('thisWeekHabits'))}</h2>
+    <div class="card">
+      ${perDone.map(x => `<div class="prog-row" style="--c:${esc(x.h.color)}">
+        <span class="name">${esc(x.h.name)}</span>
+        <span class="streak ${x.streak >= 3 ? 'hot' : ''}">${I.flame}${x.streak}</span>
+        <span class="pct">${x.hd}/${x.hs}</span></div>`).join('') || `<p class="muted small" style="margin:0">${esc(t('noData'))}</p>`}
+    </div>
+
+    ${vRows.length ? `<h2>${esc(t('votesThisWeek'))}</h2><div class="card">
+      ${vRows.map(([k, n]) => `<div class="prog-row"><span class="name">${k ? esc(t('iAmX', k)) : `<span class="muted">${esc(t('noIdentity'))}</span>`}</span><span class="pct">${n}</span></div>`).join('')}
+    </div>` : ''}
+
+    <h2>${esc(t('reviewReflect'))}</h2>
+    <textarea data-journal="${rkey}" placeholder="${esc(t('reviewReflectPh'))}">${esc(state.journal[rkey] || '')}</textarea>
+    <p class="quote">${esc(t('q', t('quotes')[1]))}</p>
+  `;
+}
 function notFound() {
   return `<div class="card empty"><p>${esc(t('notFound'))}</p><a class="btn" href="#/today">${esc(t('goToday'))}</a></div>`;
 }
@@ -847,6 +938,24 @@ const actions = {
     }
     rerender();
     if (now) document.querySelector(`.habit[data-hid="${h.id}"]`)?.classList.add('pop');
+  },
+  'count-add'(el) {
+    const h = habitById(el.dataset.id); if (!h) return;
+    const d = parseKey(el.dataset.date);
+    const was = isDone(h, d);
+    setCount(h, d, getCount(h, d) + (h.step || 1));
+    navigator.vibrate?.(8);
+    if (!was && isDone(h, d)) { const msg = h.identity ? t('voteFor', h.identity) : t('vote'); toast(msg); }
+    rerender();
+  },
+  'count-set'(el) {
+    const h = habitById(el.dataset.id); if (!h) return;
+    const d = parseKey(el.dataset.date);
+    const v = prompt(t('enterAmount', h.unit || ''), String(getCount(h, d)));
+    if (v === null) return;
+    const n = parseInt(v, 10);
+    if (isNaN(n)) return;
+    setCount(h, d, n); rerender();
   },
   day(el) {
     const delta = Number(el.dataset.delta);
@@ -958,6 +1067,8 @@ const forms = {
       type: get('type') || 'build', name: get('name'),
       identity: get('identity').replace(/^(i am|je suis)\s+/i, ''),
       logType: LOG_TYPES.includes(get('logType')) ? get('logType') : '',
+      goalCount: Math.max(0, parseInt(get('goalCount'), 10) || 0) || null,
+      unit: get('unit'), step: Math.max(1, parseInt(get('step'), 10) || 1),
       afterPrayer: PRAYERS.includes(get('afterPrayer')) ? get('afterPrayer') : '',
       time: PRAYERS.includes(get('afterPrayer')) ? '' : get('time'),
       duration: Math.min(720, Math.max(0, parseInt(get('duration'), 10) || 0)) || null,
