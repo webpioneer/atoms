@@ -33,6 +33,7 @@ const I = {
   log: '<svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 10h8M8 14h8M8 18h5"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>',
   moon: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  grip: '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
   pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
 };
 
@@ -54,6 +55,7 @@ const defaultState = () => ({
   prayerLog: {},  // { 'YYYY-MM-DD': { fajr: true, … } }
   entries: {},    // { habitId: { 'YYYY-MM-DD': { note, link, fields, sets, photos } } }
   counts: {},     // { habitId: { 'YYYY-MM-DD': number } } for measured (count) habits
+  plans: {},      // { 'YYYY-MM-DD': [habitId | 'p:fajr', …] } Today order; [] = default. Carries forward to later days.
 });
 
 function load() {
@@ -295,10 +297,16 @@ function viewToday() {
   const anytime = [], timed = [], anchored = [];
   for (const h of due) { if (canAnchor(h)) anchored.push(h); else if (h.time) timed.push(h); else anytime.push(h); }
   const timeline = [
-    ...timed.map(h => ({ at: h.time, html: () => habitRow(h, d, isToday) })),
-    ...anchored.map(h => ({ at: hhmm(new Date(pts[h.afterPrayer].getTime() + PRAYER_BLOCK * 60000)), html: () => habitRow(h, d, isToday) })),
-    ...(pts ? PRAYERS.map(p => ({ at: hhmm(pts[p]), html: () => prayerRow(p, pts, d, isToday) })) : []),
+    ...timed.map(h => ({ key: h.id, at: h.time, html: () => habitRow(h, d, isToday, true) })),
+    ...anchored.map(h => ({ key: h.id, at: hhmm(new Date(pts[h.afterPrayer].getTime() + PRAYER_BLOCK * 60000)), html: () => habitRow(h, d, isToday, true) })),
+    ...(pts ? PRAYERS.map(p => ({ key: 'p:' + p, at: hhmm(pts[p]), html: () => prayerRow(p, pts, d, isToday) })) : []),
   ].sort((a, b) => a.at.localeCompare(b.at));
+  const defaultOrder = [
+    ...anytime.map(h => ({ key: h.id, group: 'anytime', html: () => habitRow(h, d, isToday, true) })),
+    ...timeline,
+  ];
+  const plan = planFor(d);
+  const planned = plan.length ? applyPlan(defaultOrder, plan) : null;
   const prayedN = pts ? PRAYERS.filter(p => state.prayerLog[dkey(d)]?.[p]).length : 0;
   const done = due.filter(h => isDone(h, d)).length;
   const ratio = due.length ? done / due.length : 0;
@@ -321,10 +329,18 @@ function viewToday() {
       ${installCard()}`;
   } else {
     body = `
-      ${anytime.length ? `<h2 class="sec">${esc(t('anytime'))}</h2>
-        <ul class="habit-list">${anytime.map(h => habitRow(h, d, isToday)).join('')}</ul>` : ''}
-      ${timeline.length ? `${anytime.length ? `<h2 class="sec">${esc(t('throughDay'))}</h2>` : ''}
-        <ul class="habit-list">${timeline.map(x => x.html()).join('')}</ul>` : ''}
+      ${planned ? `
+        <div class="plan-head"><h2 class="sec">${esc(t('yourPlan'))}</h2>
+          <button class="btn sm" data-action="plan-reset" data-date="${dkey(d)}">${esc(t('resetOrder'))}</button></div>
+        <ul class="habit-list" data-sortable="plan" data-date="${dkey(d)}">${planned.map(x => x.html()).join('')}</ul>`
+      : defaultOrder.length ? `
+        ${defaultOrder.length > 1 && !Object.keys(state.plans || {}).length ? `<p class="drag-hint">${I.grip}${esc(t('dragHint'))}</p>` : ''}
+        <ul class="habit-list" data-sortable="plan" data-date="${dkey(d)}">
+          ${anytime.length ? `<li class="sec-li"><h2 class="sec">${esc(t('anytime'))}</h2></li>` : ''}
+          ${anytime.length ? defaultOrder.filter(x => x.group).map(x => x.html()).join('') : ''}
+          ${timeline.length && anytime.length ? `<li class="sec-li"><h2 class="sec">${esc(t('throughDay'))}</h2></li>` : ''}
+          ${timeline.map(x => x.html()).join('')}
+        </ul>` : ''}
       ${weeklyH.length ? `<h2 class="sec">${esc(t('weeklySection'))}</h2>
         <ul class="habit-list">${weeklyH.map(h => weeklyRow(h, d, isToday)).join('')}</ul>` : ''}
       ${!anytime.length && !timeline.length && !weeklyH.length ? `<div class="card empty"><p>${esc(t(isToday ? 'nothingToday' : 'nothingThatDay'))}</p></div>` : ''}
@@ -367,7 +383,11 @@ function viewToday() {
   `;
 }
 
-function habitRow(h, d, canWarn) {
+function gripBtn(name) {
+  return `<button class="grip" type="button" aria-label="${esc(t('moveAria', name))}" title="${esc(t('moveHint'))}">${I.grip}</button>`;
+}
+
+function habitRow(h, d, canWarn, sortable) {
   const done = isDone(h, d);
   const s = currentStreak(h);
   const isBreak = h.type === 'break';
@@ -382,7 +402,8 @@ function habitRow(h, d, canWarn) {
   const canLog = !isBreak && h.logType && dkey(d) === dkey(today());
   if (h.logType && hasLog(h.id) && !chips.some(c => c.includes('break'))) { /* entries indicator handled in meta */ }
   return `
-    <li class="habit ${done ? 'is-done' : ''}" style="--c:${esc(h.color)}" data-hid="${h.id}">
+    <li class="habit ${done ? 'is-done' : ''} ${sortable ? 'sortable' : ''}" style="--c:${esc(h.color)}" data-hid="${h.id}"${sortable ? ` data-key="${h.id}"` : ''}>
+      ${sortable ? gripBtn(h.name) : ''}
       ${isCount(h)
         ? `<button class="check count ${done ? 'full' : ''}" data-action="count-add" data-id="${h.id}" data-date="${dkey(d)}" aria-label="${esc(t('addUnit', h.unit || ''))}">
              <svg viewBox="0 0 48 48" class="cring"><circle cx="24" cy="24" r="21"/><circle cx="24" cy="24" r="21" class="cbar" style="stroke-dasharray:${2*Math.PI*21};stroke-dashoffset:${2*Math.PI*21*(1-Math.min(1,count/h.goalCount))}"/></svg>
@@ -417,23 +438,25 @@ function weeklyRow(h, d, isToday) {
 function viewHabits() {
   const act = activeHabits();
   const arch = state.habits.filter(h => h.archived);
-  const card = h => `
-    <a class="habit" href="#/h/${h.id}" style="--c:${esc(h.color)};text-decoration:none">
-      <span class="habit-body">
+  const card = (h, sortable) => `
+    <li class="habit ${sortable ? 'sortable' : ''}" style="--c:${esc(h.color)}"${sortable ? ` data-key="${h.id}"` : ''}>
+      ${sortable ? gripBtn(h.name) : ''}
+      <a class="habit-body" href="#/h/${h.id}">
         <span class="habit-name">${esc(h.name)}</span>
         <span class="habit-meta">${h.identity ? `${esc(t('iAmX', h.identity))} · ` : ''}${esc(schedText(h))}</span>
-      </span>
+      </a>
       <span class="streak ${currentStreak(h) >= 3 ? 'hot' : ''}">${I.flame}${currentStreak(h)}</span>
-    </a>`;
+    </li>`;
   return `
     <header class="page-head">
       <div><h1>${esc(t('habits'))}</h1><div class="sub">${esc(t('activeHabits', act.length))}</div></div>
       <a class="btn primary sm" href="#/habit/new">${I.plus} ${esc(t('new'))}</a>
     </header>
-    ${act.length ? `<div class="habit-list">${act.map(card).join('')}</div>` : `
+    ${act.length > 1 ? `<p class="drag-hint">${I.grip}${esc(t('dragHintHabits'))}</p>` : ''}
+    ${act.length ? `<ul class="habit-list" data-sortable="habits">${act.map(h => card(h, act.length > 1)).join('')}</ul>` : `
       <div class="card empty"><p>${esc(t('noHabits'))}</p>
       <a class="btn primary" href="#/habit/new">${I.plus} ${esc(t('newHabit'))}</a></div>`}
-    ${arch.length ? `<h2>${esc(t('archived'))}</h2><div class="habit-list">${arch.map(card).join('')}</div>` : ''}
+    ${arch.length ? `<h2>${esc(t('archived'))}</h2><ul class="habit-list">${arch.map(h => card(h, false)).join('')}</ul>` : ''}
   `;
 }
 
@@ -1006,6 +1029,11 @@ const actions = {
     const n = parseInt(v, 10);
     if (isNaN(n)) return;
     setCount(h, d, n); rerender();
+  },
+  'plan-reset'(el) {
+    state.plans ||= {};
+    state.plans[el.dataset.date] = [];
+    save(); toast(t('planResetT')); rerender();
   },
   day(el) {
     const delta = Number(el.dataset.delta);
@@ -1611,7 +1639,8 @@ function prayerRow(p, pts, d, isToday) {
   }
   const meta = `${fmtTime(hhmm(start))}–${fmtTime(hhmm(end))}${p === 'fajr' && pts.sunrise ? ` · ${t('sunrise')} ${fmtTime(hhmm(pts.sunrise))}` : ''}`;
   return `
-    <li class="habit prayer ${done ? 'is-done' : ''}" style="--c:${PRAYER_COLOR}">
+    <li class="habit prayer sortable ${done ? 'is-done' : ''}" style="--c:${PRAYER_COLOR}" data-key="p:${p}">
+      ${gripBtn(t('prayer_' + p))}
       <button class="check" data-action="pray" data-p="${p}" data-date="${k}" aria-pressed="${done}" aria-label="${esc(t('prayed', t('prayer_' + p)))}">${I.check}</button>
       <a class="habit-body" href="#/prayers">
         <span class="habit-name">${esc(t('prayer_' + p))} <span class="ar" lang="ar">${PRAYER_AR[p]}</span></span>
@@ -2130,6 +2159,145 @@ function fit(el) {
   el.style.height = Math.min(Math.max(el.scrollHeight + 2, min), el.closest('.composer') ? 140 : 1000) + 'px';
 }
 function autosize() { document.querySelectorAll('textarea').forEach(fit); }
+
+/* =========================================================
+   Drag-and-drop ordering (pointer events, so it works with
+   touch on iOS/Android as well as a mouse). Drag a row by its
+   grip; arrow keys on a focused grip move it one step.
+   ========================================================= */
+
+// The plan in force on day d: that day's own, else the latest earlier one.
+function planFor(d) {
+  const plans = state.plans || {};
+  const k = dkey(d);
+  if (plans[k]) return plans[k];
+  let best = null;
+  for (const pk in plans) if (pk < k && (!best || pk > best)) best = pk;
+  return best ? plans[best] : [];
+}
+
+// Order items by the plan; items the plan doesn't know (new habits, a prayer
+// turned on later) stay right after the item they follow in the default order.
+function applyPlan(items, plan) {
+  const pos = new Map(plan.map((k, i) => [k, i]));
+  const out = items.filter(x => pos.has(x.key)).sort((a, b) => pos.get(a.key) - pos.get(b.key));
+  let prev = null;
+  for (const x of items) {
+    if (!pos.has(x.key)) {
+      const i = prev ? out.indexOf(prev) : -1;
+      out.splice(i + 1, 0, x);
+    }
+    prev = x;
+  }
+  return out;
+}
+
+function savePlan(k, keys) {
+  state.plans ||= {};
+  state.plans[k] = keys;
+  // Keep two months of history, and always the latest plan (it carries forward).
+  const cutoff = dkey(addDays(today(), -60));
+  const latest = Object.keys(state.plans).sort().pop();
+  for (const pk in state.plans) if (pk < cutoff && pk !== latest) delete state.plans[pk];
+  save();
+}
+
+const sorters = {
+  plan(keys, list) { savePlan(list.dataset.date, keys); },
+  habits(keys) {
+    const moved = keys.map(habitById).filter(Boolean);
+    const set = new Set(moved);
+    state.habits = [...moved, ...state.habits.filter(h => !set.has(h))];
+    save();
+  },
+};
+const listKeys = list => [...list.children].filter(el => el.dataset.key).map(el => el.dataset.key);
+function commitSort(list) {
+  const fn = sorters[list.dataset.sortable];
+  if (fn) fn(listKeys(list), list);
+}
+
+let drag = null;
+document.addEventListener('pointerdown', e => {
+  const grip = e.target.closest('.grip');
+  if (!grip || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const item = grip.closest('[data-key]');
+  const list = item?.parentElement;
+  if (!list?.dataset.sortable) return;
+  e.preventDefault();
+  const r = item.getBoundingClientRect();
+  const css = item.style.cssText;
+  const ph = document.createElement('li');
+  ph.className = 'drag-ph';
+  ph.style.height = r.height + 'px';
+  item.before(ph);
+  Object.assign(item.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', zIndex: 50 });
+  item.classList.add('dragging');
+  document.body.classList.add('is-dragging');
+  drag = { item, list, ph, css, dy: e.clientY - r.top, y: e.clientY, before: listKeys(list).join() };
+  try { grip.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+  navigator.vibrate?.(8);
+  drag.scrollT = setInterval(() => {
+    if (!drag) return;
+    const edge = 90, bottom = window.innerHeight - 64;
+    const v = drag.y < edge ? -Math.ceil((edge - drag.y) / 6) : drag.y > bottom - edge ? Math.ceil((drag.y - bottom + edge) / 6) : 0;
+    if (v) { window.scrollBy(0, v); placeDrag(); }
+  }, 16);
+});
+
+function placeDrag() {
+  const { item, list, ph, dy, y } = drag;
+  item.style.top = (y - dy) + 'px';
+  const mid = y - dy + item.offsetHeight / 2;
+  const sibs = [...list.children].filter(el => el !== item && el !== ph);
+  const next = sibs.find(el => { const r = el.getBoundingClientRect(); return mid < r.top + r.height / 2; });
+  if (next) { if (ph.nextElementSibling !== next) list.insertBefore(ph, next); }
+  else if (list.lastElementChild !== ph) list.appendChild(ph);
+}
+
+window.addEventListener('pointermove', e => {
+  if (!drag) return;
+  e.preventDefault();
+  drag.y = e.clientY;
+  placeDrag();
+}, { passive: false });
+
+function endDrag(cancel) {
+  if (!drag) return;
+  const { item, list, ph, css, before } = drag;
+  clearInterval(drag.scrollT);
+  drag = null;
+  if (!cancel) ph.before(item);
+  ph.remove();
+  item.style.cssText = css;
+  item.classList.remove('dragging');
+  document.body.classList.remove('is-dragging');
+  if (cancel || listKeys(list).join() === before) { rerender(); return; }
+  commitSort(list);
+  rerender();
+}
+window.addEventListener('pointerup', () => endDrag(false));
+window.addEventListener('pointercancel', () => endDrag(true));
+// A drag must never turn into a tap on the row's link.
+document.addEventListener('click', e => { if (e.target.closest('.grip')) e.preventDefault(); }, true);
+document.addEventListener('contextmenu', e => { if (e.target.closest('.grip')) e.preventDefault(); });
+
+document.addEventListener('keydown', e => {
+  const grip = e.target.closest?.('.grip');
+  if (!grip || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  const item = grip.closest('[data-key]'), list = item?.parentElement;
+  if (!list?.dataset.sortable) return;
+  e.preventDefault();
+  const sib = el => e.key === 'ArrowUp' ? el.previousElementSibling : el.nextElementSibling;
+  let s = sib(item);
+  while (s && !s.dataset.key) s = sib(s);
+  if (!s) return;
+  if (e.key === 'ArrowUp') s.before(item); else s.after(item);
+  const key = item.dataset.key, name = list.dataset.sortable;
+  commitSort(list);
+  rerender();
+  document.querySelector(`[data-sortable="${name}"] > [data-key="${CSS.escape(key)}"] .grip`)?.focus();
+});
 
 /* ---------- Lifecycle ---------- */
 let lastDay = dkey(today());

@@ -500,3 +500,26 @@ h2.sec { margin: 4px 0 10px; font-size: 13px; font-family: var(--sans); text-tra
 
 .form[data-sched="weekly"] .sched-days-only { display: none; }
 .form[data-sched="days"] .sched-weekly-only { display: none; }
+
+/* ---------- Drag-and-drop ordering ---------- */
+.grip {
+  flex: none; width: 22px; height: 40px; margin: 0 -6px 0 -4px; padding: 0;
+  display: grid; place-items: center; border: 0; background: transparent; color: var(--muted);
+  cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  opacity: .55; border-radius: 8px;
+}
+.grip svg { width: 18px; height: 18px; fill: currentColor; }
+.grip:hover, .grip:focus-visible { opacity: 1; }
+.grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.habit-list:not([data-sortable]) .grip { display: none; }
+.habit.dragging { box-shadow: 0 10px 30px rgba(0, 0, 0, .22); transform: scale(1.02); opacity: .97; pointer-events: none; }
+.habit.dragging .grip { cursor: grabbing; opacity: 1; }
+.drag-ph { border: 2px dashed var(--line); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+body.is-dragging { -webkit-user-select: none; user-select: none; cursor: grabbing; }
+.sec-li { list-style: none; }
+.sec-li h2.sec { margin: 0; }
+.habit + .sec-li { margin-top: 12px; }
+.plan-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.plan-head h2.sec { margin: 0; }
+.drag-hint { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; color: var(--muted); margin: -4px 0 12px; }
+.drag-hint svg { flex: none; width: 15px; height: 15px; fill: currentColor; margin-top: 2px; }

@@ -34,6 +34,12 @@ Upload the folder to any static host that serves HTTPS, such as Netlify Drop, Ve
 
 | Two-minute rule, in practice | Habits with a duration get a ▶ timer on Today. Run the full session or "just 2 minutes"; it checks the habit off when time is up |
 
+## Daily plan (drag and drop)
+
+Every row on **Today** has a ⠿ handle. Drag it to put the day in the order you'll actually do things; habits and prayers mix freely. The order is saved as that day's plan and carries over to the following days until you change it, so you set up your routine once and adjust it when a day is different. **Reset order** goes back to the default (anytime habits first, then everything else by time). New habits slot in next to the item they'd follow by default.
+
+On the **Habits** tab, the same handle reorders your habit list. That order is also the default order for anytime habits on Today. On a keyboard, focus a handle and use ↑/↓.
+
 ## Prayer times
 
 Turn this on under **More → Prayer times**. The five daily prayers (Fajr, Dhuhr, Asr, Maghrib, Isha) then appear on Today as 15-minute blocks, in time order alongside your habits, and you can check them off. Progress shows the last 14 days.
