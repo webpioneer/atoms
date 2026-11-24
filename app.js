@@ -226,11 +226,26 @@ function scheduleLabel(days) {
   return [...days].sort().map(dayShort).join(' · ');
 }
 
-function cueLine(h) {
+// "After Fajr" / "20 min after Fajr" / "30 min before Dhuhr". The stored offset counts from the end of the
+// prayer's 15-minute slot; "before" is shown from the prayer's start.
+function relPrayer(p, off = 0) {
+  const name = t('prayer_' + p);
+  const before = -(off + PRAYER_BLOCK);           // minutes between the habit's start and the prayer's start
+  return off > 0 ? t('afterXPlus', name, fmtDur(off)) : before > 0 ? t('beforeX', name, fmtDur(before)) : t('afterX', name);
+}
+// Start of a prayer-anchored habit on a given day, as "HH:MM", or '' when prayer times are off.
+function anchoredTime(h, pts) {
+  if (!h.afterPrayer || !pts?.[h.afterPrayer]) return '';
+  return hhmm(new Date(pts[h.afterPrayer].getTime() + (PRAYER_BLOCK + (h.prayerOffset || 0)) * 60000));
+}
+
+function cueLine(h, d) {
   const bits = [];
-  if (h.afterPrayer && PRAYERS.includes(h.afterPrayer)) bits.push(t('afterX', t('prayer_' + h.afterPrayer)));
+  const anchored = h.afterPrayer && PRAYERS.includes(h.afterPrayer);
+  if (anchored) bits.push(relPrayer(h.afterPrayer, h.prayerOffset));
   else if (h.stack) bits.push(t('afterX', h.stack));
-  if (h.time) bits.push(h.duration ? `${fmtTime(h.time)}–${fmtTime(endTime(h.time, h.duration))}` : fmtTime(h.time));
+  const tm = h.time || (anchored && d ? anchoredTime(h, prayerTimes(d)) : '');
+  if (tm) bits.push(h.duration ? `${fmtTime(tm)}–${fmtTime(endTime(tm, h.duration))}` : fmtTime(tm));
   else if (h.duration) bits.push(fmtDur(h.duration));
   if (h.location) bits.push(h.location);
   return bits.join(' · ');
@@ -298,7 +313,7 @@ function viewToday() {
   for (const h of due) { if (canAnchor(h)) anchored.push(h); else if (h.time) timed.push(h); else anytime.push(h); }
   const timeline = [
     ...timed.map(h => ({ key: h.id, at: h.time, html: () => habitRow(h, d, isToday, true) })),
-    ...anchored.map(h => ({ key: h.id, at: hhmm(new Date(pts[h.afterPrayer].getTime() + PRAYER_BLOCK * 60000)), html: () => habitRow(h, d, isToday, true) })),
+    ...anchored.map(h => ({ key: h.id, at: anchoredTime(h, pts), html: () => habitRow(h, d, isToday, true) })),
     ...(pts ? PRAYERS.map(p => ({ key: 'p:' + p, at: hhmm(pts[p]), html: () => prayerRow(p, pts, d, isToday) })) : []),
   ].sort((a, b) => a.at.localeCompare(b.at));
   const defaultOrder = [
@@ -396,7 +411,7 @@ function habitRow(h, d, canWarn, sortable) {
   if (isBreak) chips.push(`<span class="chip break">${esc(t('breakingChip'))}</span>`);
   else if (h.twoMin) chips.push(`<span class="chip">${esc(t('twoMinChip', h.twoMin))}</span>`);
   if (canWarn && !done && missedPrevious(h, d)) chips.push(`<span class="chip warn">${esc(t('neverMissTwice'))}</span>`);
-  const meta = isBreak ? (h.identity ? t('iAmX', h.identity) : t('markResisted')) : cueLine(h);
+  const meta = isBreak ? (h.identity ? t('iAmX', h.identity) : t('markResisted')) : cueLine(h, d);
   if (isCount(h)) chips.unshift(`<button class="chip countchip" data-action="count-set" data-id="${h.id}" data-date="${dkey(d)}">${count}/${h.goalCount}${h.unit ? ' ' + esc(h.unit) : ''}</button>`);
   const canTime = !isBreak && h.duration && !h.logType && !done && dkey(d) === dkey(today());
   const canLog = !isBreak && h.logType && dkey(d) === dkey(today());
@@ -585,7 +600,7 @@ function viewHabitDetail(id) {
       <p>${t('cStop', B(h.name))}</p>` : `
       ${h.identity ? `<p>${t('cIAm', B(h.identity))}</p>` : ''}
       <p>${t('cWill', B(h.name), h.time && B(fmtTime(h.time)), h.location && B(h.location), h.duration && B(fmtDur(h.duration)))}</p>
-      ${h.afterPrayer && PRAYERS.includes(h.afterPrayer) ? `<p>${t('cAfterPrayer', B(t('prayer_' + h.afterPrayer)), B(h.twoMin || h.name))}</p>`
+      ${h.afterPrayer && PRAYERS.includes(h.afterPrayer) ? `<p>${t((h.prayerOffset || 0) + PRAYER_BLOCK <= 0 ? 'cBeforePrayer' : 'cAfterPrayer', B(t('prayer_' + h.afterPrayer)), B(h.twoMin || h.name))}</p>`
         : h.stack ? `<p>${t('cStack', B(h.stack), B(h.twoMin || h.name))}</p>` : ''}`;
 
   const names = t(isBreak ? 'lawsBreak' : 'lawsBuild');
@@ -1142,6 +1157,7 @@ const forms = {
     const id = f.dataset.id;
     const existing = id ? habitById(id) : null;
     const h = existing || { id: uid(), createdAt: dkey(today()), archived: false };
+    const prevSlot = { time: h.time, afterPrayer: h.afterPrayer };
     Object.assign(h, {
       type: get('type') || 'build', name: get('name'),
       identity: get('identity').replace(/^(i am|je suis)\s+/i, ''),
@@ -1158,7 +1174,11 @@ const forms = {
       twoMin: get('twoMin'), l1: get('l1'), l2: get('l2'), l2b: get('l2b'), l3: get('l3'), l3b: get('l3b'),
       l4: get('l4'), l4b: get('l4b'), days, color: get('color') || COLORS[0],
     });
+    if (h.afterPrayer !== prevSlot.afterPrayer) h.prayerOffset = 0;
     if (!existing) state.habits.push(h);
+    if (existing && (prevSlot.time !== h.time || prevSlot.afterPrayer !== h.afterPrayer)) {
+      for (const pk in state.plans || {}) state.plans[pk] = state.plans[pk].filter(x => x !== h.id);
+    }
     save();
     toast(t(existing ? 'savedT' : 'createdT'));
     location.hash = existing ? `#/h/${h.id}` : '#/today';
@@ -1639,8 +1659,7 @@ function prayerRow(p, pts, d, isToday) {
   }
   const meta = `${fmtTime(hhmm(start))}–${fmtTime(hhmm(end))}${p === 'fajr' && pts.sunrise ? ` · ${t('sunrise')} ${fmtTime(hhmm(pts.sunrise))}` : ''}`;
   return `
-    <li class="habit prayer sortable ${done ? 'is-done' : ''}" style="--c:${PRAYER_COLOR}" data-key="p:${p}">
-      ${gripBtn(t('prayer_' + p))}
+    <li class="habit prayer ${done ? 'is-done' : ''}" style="--c:${PRAYER_COLOR}" data-key="p:${p}">
       <button class="check" data-action="pray" data-p="${p}" data-date="${k}" aria-pressed="${done}" aria-label="${esc(t('prayed', t('prayer_' + p)))}">${I.check}</button>
       <a class="habit-body" href="#/prayers">
         <span class="habit-name">${esc(t('prayer_' + p))} <span class="ar" lang="ar">${PRAYER_AR[p]}</span></span>
@@ -2146,12 +2165,19 @@ function logSection(h) {
 
 /* ---------- UI utilities ---------- */
 let toastT;
-function toast(msg) {
+function toast(msg, action) {
   const el = $('#toast');
   el.textContent = msg;
+  el.classList.toggle('has-action', !!action);
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = action.label;
+    b.onclick = () => { clearTimeout(toastT); el.classList.remove('show'); action.fn(); };
+    el.append(' ', b);
+  }
   el.classList.add('show');
   clearTimeout(toastT);
-  toastT = setTimeout(() => el.classList.remove('show'), 2200);
+  toastT = setTimeout(() => el.classList.remove('show'), action ? 5000 : 2200);
 }
 function fit(el) {
   const min = el.closest('.composer') ? 40 : el.classList.contains('short') ? 60 : 90;
@@ -2203,7 +2229,13 @@ function savePlan(k, keys) {
 }
 
 const sorters = {
-  plan(keys, list) { savePlan(list.dataset.date, keys); },
+  plan(keys, list, moved) {
+    const k = list.dataset.date;
+    const before = { plan: state.plans?.[k], h: habitById(moved) && { ...habitById(moved) } };  // for Undo
+    savePlan(k, keys);
+    const msg = retime(habitById(moved), keys, parseKey(k));
+    if (msg) toast(msg, { label: t('undo'), fn: () => undoMove(k, before) });
+  },
   habits(keys) {
     const moved = keys.map(habitById).filter(Boolean);
     const set = new Set(moved);
@@ -2211,10 +2243,78 @@ const sorters = {
     save();
   },
 };
+/* ---------- Moving a habit sets its time from where it lands ----------
+   Prayers keep their fixed times and act as anchors. A habit takes the end of
+   the nearest timed item above it (squeezed halfway if the next timed item
+   starts sooner); above every timed item it goes just before the next one, or
+   stays "anytime" when dropped among anytime habits. When the neighbour it is
+   timed from is a prayer (or a habit that follows one), the habit is stored as
+   an offset from that prayer, so its time moves with the prayer every day. */
+const toMin = tm => { const [h, m] = tm.split(':').map(Number); return h * 60 + m; };
+const fromMin = m => { m = Math.min(1435, Math.max(0, Math.round(m / 5) * 5)); return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
+
+function slotOf(key, pts) {
+  if (key.startsWith('p:')) {
+    const p = key.slice(2);
+    if (!pts?.[p]) return null;
+    const s = toMin(hhmm(pts[p]));
+    return { start: s, end: s + PRAYER_BLOCK };
+  }
+  const h = habitById(key);
+  if (!h) return null;
+  let s = null;
+  if (h.afterPrayer && pts?.[h.afterPrayer]) s = toMin(anchoredTime(h, pts));
+  else if (h.time) s = toMin(h.time);
+  if (s == null) return null;
+  return { start: s, end: s + (h.duration || 0) };
+}
+
+function retime(h, keys, d) {
+  if (!h) return '';
+  const pts = prayerTimes(d);
+  const i = keys.indexOf(h.id);
+  const slots = keys.map(k => (k === h.id ? null : slotOf(k, pts)));
+  let ai = -1, bi = -1;
+  for (let j = i - 1; j >= 0; j--) if (slots[j]) { ai = j; break; }
+  for (let j = i + 1; j < keys.length; j++) if (slots[j]) { bi = j; break; }
+  const above = slots[ai], below = slots[bi];
+  // The prayer an item is tied to: the prayer itself, or the prayer a habit follows.
+  const prayerOf = k => {
+    if (k.startsWith('p:')) return k.slice(2);
+    const x = habitById(k);
+    return x?.afterPrayer && pts?.[x.afterPrayer] ? x.afterPrayer : null;
+  };
+  let start, anchor = null;
+  if (above) {
+    start = above.end > above.start ? above.end : above.start + 15;
+    if (below && start > below.start) start = (above.start + below.start) / 2;
+    anchor = prayerOf(keys[ai]);
+  } else if (below) {
+    if (!slotOf(h.id, pts)) return '';               // anytime habit reordered among anytime ones
+    if (keys[i + 1] && !slots[i + 1]) start = null;   // dropped among anytime habits → anytime
+    else { start = below.start - (h.duration || 15); anchor = prayerOf(keys[bi]); }
+  } else return '';
+
+  const next = start == null ? { time: '', afterPrayer: '', prayerOffset: 0 }
+    : anchor ? { time: '', afterPrayer: anchor, prayerOffset: Math.round((start - toMin(hhmm(pts[anchor])) - PRAYER_BLOCK) / 5) * 5 }
+    : { time: fromMin(start), afterPrayer: '', prayerOffset: 0 };
+  if ((h.time || '') === next.time && (h.afterPrayer || '') === next.afterPrayer && (h.prayerOffset || 0) === next.prayerOffset) return '';
+  Object.assign(h, next);
+  save();
+  if (next.afterPrayer) return t('movedRel', h.name, relPrayer(next.afterPrayer, next.prayerOffset), fmtTime(anchoredTime(h, pts)));
+  return next.time ? t('movedTo', h.name, fmtTime(next.time)) : t('movedAnytime', h.name);
+}
+
+function undoMove(k, before) {
+  if (before.plan === undefined) delete state.plans[k]; else state.plans[k] = before.plan;
+  if (before.h) { const h = habitById(before.h.id); if (h) Object.assign(h, { time: before.h.time, afterPrayer: before.h.afterPrayer, prayerOffset: before.h.prayerOffset }); }
+  save(); rerender();
+}
+
 const listKeys = list => [...list.children].filter(el => el.dataset.key).map(el => el.dataset.key);
-function commitSort(list) {
+function commitSort(list, moved) {
   const fn = sorters[list.dataset.sortable];
-  if (fn) fn(listKeys(list), list);
+  if (fn) fn(listKeys(list), list, moved);
 }
 
 let drag = null;
@@ -2273,7 +2373,7 @@ function endDrag(cancel) {
   item.classList.remove('dragging');
   document.body.classList.remove('is-dragging');
   if (cancel || listKeys(list).join() === before) { rerender(); return; }
-  commitSort(list);
+  commitSort(list, item.dataset.key);
   rerender();
 }
 window.addEventListener('pointerup', () => endDrag(false));
@@ -2294,7 +2394,7 @@ document.addEventListener('keydown', e => {
   if (!s) return;
   if (e.key === 'ArrowUp') s.before(item); else s.after(item);
   const key = item.dataset.key, name = list.dataset.sortable;
-  commitSort(list);
+  commitSort(list, key);
   rerender();
   document.querySelector(`[data-sortable="${name}"] > [data-key="${CSS.escape(key)}"] .grip`)?.focus();
 });

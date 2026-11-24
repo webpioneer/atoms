@@ -36,7 +36,15 @@ Upload the folder to any static host that serves HTTPS, such as Netlify Drop, Ve
 
 ## Daily plan (drag and drop)
 
-Every row on **Today** has a ⠿ handle. Drag it to put the day in the order you'll actually do things; habits and prayers mix freely. The order is saved as that day's plan and carries over to the following days until you change it, so you set up your routine once and adjust it when a day is different. **Reset order** goes back to the default (anytime habits first, then everything else by time). New habits slot in next to the item they'd follow by default.
+Every habit on **Today** has a ⠿ handle. Drag it to put the day in the order you'll actually do things. The order is saved as that day's plan and carries over to the following days until you change it, so you set up your routine once and adjust it when a day is different. **Reset order** goes back to the default (anytime habits first, then everything else by time). New habits slot in next to the item they'd follow by default.
+
+A habit takes its **time from where you drop it**, and a toast shows the new time with an **Undo** button:
+- Below a timed item, it starts when that item ends (a prayer counts as 15 minutes). If the next timed item starts sooner, it goes halfway between the two.
+- Above every timed item, it ends just before the next one. Dropped among anytime habits, it becomes an anytime habit.
+- **Next to a prayer, it follows the prayer.** When the item it's timed from is a prayer, or a habit that already follows one, the habit is saved relative to that prayer ("After Dhuhr", "15 min after Dhuhr", "1 h before Fajr") instead of at a clock time. Prayer times shift every day, so its time shifts with them, and a whole routine built after Fajr moves together. Next to a habit with a fixed clock time, it gets a fixed clock time.
+- Reordering anytime habits among themselves doesn't give them a time.
+
+Prayers have fixed times, so they have no handle; they stay put and act as anchors. Changing a habit's time in its form re-slots it by time on Today.
 
 On the **Habits** tab, the same handle reorders your habit list. That order is also the default order for anytime habits on Today. On a keyboard, focus a handle and use ↑/↓.
 
